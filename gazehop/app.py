@@ -55,6 +55,7 @@ class App:
         self._report = None             # (time, frames, faces) when running started
         self._want_window, self._want_tray = window, tray
         self.window = None              # the app window (camera view), if open
+        self.settings = None            # the settings window, if open
         self.tray = None
 
     # ---- lifecycle
@@ -173,6 +174,10 @@ class App:
                 self.open_window()
             elif ev[0] == "dot":
                 self.toggle_dot()
+            elif ev[0] == "settings":
+                self.open_settings()
+            elif ev[0] == "cameras" and self.settings:
+                self.settings.set_cameras(ev[1])
             elif ev[0] == "quit":
                 self.quit()
         if self.tray:
@@ -198,7 +203,7 @@ class App:
         self._gaze = _mean(self._recent_gaze)
         head = _mean(self._recent_head)
         if self._dot:
-            self._dot.geometry(f"+{int(self._gaze[0]) - 8}+{int(self._gaze[1]) - 8}")
+            self._dot.move_to(self._gaze)
         self.focuser.update(self._gaze, head, self.model.keyboard_line)
 
     def _speed_report(self, now: float) -> None:
@@ -233,6 +238,20 @@ class App:
             self.window = ControlWindow(self)
         else:
             self.window.show()
+
+    def open_settings(self) -> None:
+        if self.settings is None:
+            from .settings import SettingsWindow
+            self.settings = SettingsWindow(self)
+        else:
+            self.settings.show()
+
+    def set_options(self, changes: dict) -> None:
+        """From the settings window: applies now (the focuser reads this same dict) and saves."""
+        self.cfg.update(changes)
+        if changes.get("show_dot", self.dot_visible) != self.dot_visible:
+            self.toggle_dot()
+        config.save(changes)
 
     @property
     def dot_visible(self) -> bool:
@@ -321,13 +340,8 @@ class App:
     # ---- gaze dot
 
     def _make_dot(self) -> None:
-        import tkinter as tk
-        d = tk.Toplevel(self.root)
-        d.overrideredirect(True)
-        d.attributes("-topmost", True)
-        d.configure(bg="#ff2d55")
-        d.geometry("16x16+0+0")
-        self._dot = d
+        from .dot import GazeDot
+        self._dot = GazeDot(self.root)
 
 
 def _mean(pts):

@@ -145,10 +145,27 @@ def open_camera(index: int):
     if not cap.isOpened():
         cap.release()
         return None
+    # compressed video first: uncompressed 720p is capped at about 10 frames/s on most USB webcams
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     # bigger eyes in the frame = better gaze; cameras that can't do 720p fall back on their own
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
     return cap
+
+
+def list_cameras(skip=(), limit: int = 6) -> list:
+    """(index, width, height) of every camera that delivers a picture. `skip`: indices to leave
+    alone — a camera that is in use cannot be opened a second time."""
+    found = []
+    for i in range(limit):
+        cap = None if i in skip else open_camera(i)
+        if cap is None:
+            continue
+        ok, frame = cap.read()
+        cap.release()
+        if ok:
+            found.append((i, frame.shape[1], frame.shape[0]))
+    return found
 
 
 class Tracker:

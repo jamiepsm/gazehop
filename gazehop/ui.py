@@ -1,11 +1,53 @@
 """The app window: live camera view with what gazehop reads marked on it, a status line, buttons."""
 from __future__ import annotations
 
+import functools
+import math
 import os
 import tkinter as tk
 
 ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 BG, FG, MUTED = "#1c2030", "#f5f7fa", "#9aa0b0"
+CARD, CARD_HI, LINE, OFF = "#262b3d", "#343a52", "#333a50", "#4a516b"
+ACCENT, ACCENT_HI, WARN = "#48d696", "#72e3b0", "#ff6b6b"
+_family = None
+
+
+def font(size: int, weight: str = "normal") -> tuple:
+    """The desktop's own interface font (Segoe UI on Windows, the system sans on Linux)."""
+    global _family
+    if _family is None:
+        try:
+            _family = str(tk._default_root.tk.call("font", "actual", "TkDefaultFont", "-family"))
+        except Exception:
+            _family = "Helvetica"
+    return (_family, size, weight)
+
+
+def button(parent, text, command, primary=False, on=BG):
+    """A flat button that lights up under the pointer. `on`: the colour of the surface it sits on."""
+    bg, hover, fg = (ACCENT, ACCENT_HI, BG) if primary else (CARD_HI if on == CARD else CARD, OFF, FG)
+    b = tk.Button(parent, text=text, command=command, font=font(10), relief="flat", bd=0, padx=12, pady=6,
+                  cursor="hand2", bg=bg, fg=fg, activebackground=hover, activeforeground=fg,
+                  disabledforeground=MUTED, highlightthickness=1, highlightbackground=on, highlightcolor=ACCENT)
+    b.bind("<Enter>", lambda _e: str(b["state"]) != "disabled" and b.configure(bg=hover))
+    b.bind("<Leave>", lambda _e: b.configure(bg=bg))
+    return b
+
+
+@functools.lru_cache(maxsize=None)
+def disc(d: int, colour: str, bg: str):
+    """A filled circle with smooth edges, as an image. Tk draws circles jagged, so the edge pixels
+    are mixed with the background colour here."""
+    rgb = lambda c: [int(c[i:i + 2], 16) for i in (1, 3, 5)]
+    fg, back, r, rows = rgb(colour), rgb(bg), d / 2, []
+    for y in range(d):
+        cover = [max(0.0, min(1.0, r - math.hypot(x + 0.5 - r, y + 0.5 - r))) for x in range(d)]
+        rows.append("{" + " ".join("#%02x%02x%02x" % tuple(round(b + (f - b) * a) for f, b in zip(fg, back))
+                                   for a in cover) + "}")
+    img = tk.PhotoImage(width=d, height=d)
+    img.put(" ".join(rows))
+    return img
 
 
 def ppm(rgb) -> bytes:
@@ -47,24 +89,25 @@ class ControlWindow:
         self._image = tk.PhotoImage(width=480, height=270)     # blank until the first camera picture
         self.picture = tk.Label(w, bg="black", image=self._image, bd=0)
         self.picture.pack(padx=12, pady=(12, 6))
-        self.status = tk.Label(w, bg=BG, fg=FG, font=("Helvetica", 12, "bold"), anchor="w")
+        self.status = tk.Label(w, bg=BG, fg=FG, font=font(12, "bold"), anchor="w")
         self.status.pack(fill="x", padx=14)
-        self.detail = tk.Label(w, bg=BG, fg=MUTED, font=("Helvetica", 10), anchor="w", justify="left")
+        self.detail = tk.Label(w, bg=BG, fg=MUTED, font=font(10), anchor="w", justify="left")
         self.detail.pack(fill="x", padx=14, pady=(0, 6))
-        legend = tk.Label(w, bg=BG, fg=MUTED, font=("Helvetica", 9), anchor="w", justify="left",
+        legend = tk.Label(w, bg=BG, fg=MUTED, font=font(9), anchor="w", justify="left",
                           text="Green outline: face and eyes found.  White circles: irises.\n"
                                "White boxes: the eye pixels the model reads.  Orange arrow: where your head points.")
         legend.pack(fill="x", padx=14, pady=(0, 8))
         row = tk.Frame(w, bg=BG)
         row.pack(fill="x", padx=10, pady=(0, 12))
         self.buttons = {}
-        for key, text, action in (("pause", "Pause", app.toggle_pause),
-                                  ("calibrate", "Calibrate", lambda: app.request_calibration(add=False)),
-                                  ("add", "Add round", lambda: app.request_calibration(add=True)),
-                                  ("dot", "Gaze dot", app.toggle_dot),
-                                  ("quit", "Quit", app.quit)):
-            b = tk.Button(row, text=text, command=action, relief="flat", padx=10, pady=4)
-            b.pack(side="left", padx=4)
+        for key, text, action, side in (("pause", "Pause", app.toggle_pause, "left"),
+                                        ("calibrate", "Calibrate", lambda: app.request_calibration(add=False), "left"),
+                                        ("add", "Add round", lambda: app.request_calibration(add=True), "left"),
+                                        ("dot", "Gaze dot", app.toggle_dot, "left"),
+                                        ("quit", "Quit", app.quit, "right"),
+                                        ("settings", "Settings", app.open_settings, "right")):
+            b = button(row, text, action)
+            b.pack(side=side, padx=4)
             self.buttons[key] = b
         self._shown = None
         self.visible = True

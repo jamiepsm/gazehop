@@ -66,3 +66,19 @@ def load() -> dict:
     except (OSError, ValueError) as e:
         print(f"gazehop: ignoring unreadable {path}: {e}", file=sys.stderr)
     return cfg
+
+
+def save(changes: dict) -> None:
+    """Writes these settings into config.json and leaves the rest of the file as it is, so a
+    --camera or --dot given on the command line for one run is not made permanent."""
+    path = config_path()
+    try:
+        with open(path, encoding="utf-8") as fh:
+            user = json.load(fh)
+    except (OSError, ValueError):
+        user = dict(DEFAULTS)
+    user.update(changes)
+    os.makedirs(data_dir(), exist_ok=True)
+    with open(path + ".tmp", "w", encoding="utf-8") as fh:
+        json.dump(user, fh, indent=2)
+    os.replace(path + ".tmp", path)

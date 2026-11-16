@@ -70,7 +70,9 @@ From a terminal it is `./run.sh --window` (`run.bat --window`).
   it reads, and an orange arrow for where your head points. If the outline turns amber or
   disappears, gazehop has nothing to work with: fix the light or the camera first.
 - **Status line** — tracking, paused, looking at the keyboard, looking away, no readable face.
-- **Buttons** — Pause, Calibrate (start over), Add round, Gaze dot, Quit.
+- **Buttons** — Pause, Calibrate (start over), Add round, Gaze dot, Settings, Quit.
+- **Gaze dot** — a small see-through green drop that floats where gazehop thinks you are looking.
+  It stretches as it moves and settles when your eyes rest. Clicks go straight through it.
 - **Tray icon** — the same actions in a menu; closing the window keeps gazehop running in the
   tray. Without tray support (see the installer's notes) closing the window quits.
 
@@ -123,7 +125,11 @@ around, then press Space to keep the new calibration or Esc to discard it.
 
 ## Settings
 
-Edit `config.json` (`%APPDATA%\gazehop\` on Windows, `~/.config/gazehop/` on Linux), then restart.
+Press **Settings** in the app window, or choose **Settings…** in the tray menu. Changes apply right
+away and are saved for next time; only the camera and the pause shortcut wait for the next start.
+
+The same settings live in `config.json` (`%APPDATA%\gazehop\` on Windows, `~/.config/gazehop/` on
+Linux) if you prefer to edit them by hand; restart afterwards.
 
 | Key | Default | Meaning |
 |---|---|---|

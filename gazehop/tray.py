@@ -29,6 +29,7 @@ class Tray:
             item("Calibrate (start over)…", send("calibrate", False)),
             item("Add a calibration round…", send("calibrate", True)),
             item("Show gaze dot", send("dot"), checked=lambda _i: app.dot_visible),
+            item("Settings…", send("settings")),
             menu.SEPARATOR,
             item("Quit", send("quit"))))
         self._paused = False

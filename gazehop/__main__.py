@@ -64,17 +64,10 @@ def cmd_run(args, calibrate_only=False) -> int:
 
 
 def cmd_cameras(_args) -> int:
-    from .tracker import open_camera
-    found = False
-    for i in range(6):
-        cap = open_camera(i)
-        if cap is None:
-            continue
-        ok, frame = cap.read()
-        cap.release()
-        if ok:
-            found = True
-            print(f"camera {i}: {frame.shape[1]}x{frame.shape[0]}")
+    from .tracker import list_cameras
+    found = list_cameras()
+    for i, w, h in found:
+        print(f"camera {i}: {w}x{h}")
     if not found:
         print("No working camera found.")
     return 0 if found else 1

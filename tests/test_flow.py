@@ -52,9 +52,11 @@ def faketk(monkeypatch):
     FakeTk.now, FakeTk.queue = 0.0, []
     mod = types.ModuleType("tkinter")
     mod.Tk = mod.Toplevel = mod.Canvas = mod.Misc = mod.Label = mod.Button = mod.Frame = mod.PhotoImage = FakeTk
+    mod.Entry = FakeTk
     mod._default_root = None
     monkeypatch.delitem(sys.modules, "gazehop.ui", raising=False)
     monkeypatch.delitem(sys.modules, "gazehop.tray", raising=False)
+    monkeypatch.delitem(sys.modules, "gazehop.settings", raising=False)
     monkeypatch.setitem(sys.modules, "tkinter", mod)
     monkeypatch.delitem(sys.modules, "gazehop.calibration", raising=False)
     monkeypatch.delitem(sys.modules, "gazehop.app", raising=False)
@@ -294,7 +296,8 @@ def test_tray_menu_queues_events(faketk, monkeypatch):
     got = []
     while not app.events.empty():
         got.append(app.events.get())
-    assert got == [("window",), ("pause",), ("calibrate", False), ("calibrate", True), ("dot",), ("quit",)]
+    assert got == [("window",), ("pause",), ("calibrate", False), ("calibrate", True), ("dot",),
+                   ("settings",), ("quit",)]
     pause = made["menu"].items[1]
     assert pause.text(pause) == "Pause"
     app.paused = True
@@ -305,3 +308,71 @@ def test_tray_menu_queues_events(faketk, monkeypatch):
 
     monkeypatch.setitem(sys.modules, "pystray", None)       # not installed: the app carries on without
     assert tray.start(app) is None
+
+
+def test_settings_window(faketk, monkeypatch, tmp_path):
+    """The settings window offers every setting, applies changes to the live settings and saves
+    only what was changed."""
+    import json
+    import queue
+    from gazehop import config, tracker
+    monkeypatch.setattr(config, "data_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(tracker, "list_cameras", lambda skip=(): [(2, 640, 480)])
+    from gazehop import settings
+    from gazehop.ui import disc
+    disc.cache_clear()
+
+    offered = {row[0] for _name, rows in settings.PAGES for row in rows}
+    assert offered == set(config.DEFAULTS) - {"config_version"}
+    for _name, rows in settings.PAGES:      # every slider can show its default
+        for key, _label, _hint, control in rows:
+            if isinstance(control, tuple):
+                assert control[0] <= config.DEFAULTS[key] <= control[1], key
+    assert settings.valid_hotkey("<ctrl>+<alt>+g") and not settings.valid_hotkey("g")
+    assert not settings.valid_hotkey("<nonsense>+g")
+
+    cfg = config.load()
+    cfg["camera"] = 4               # as if started with --camera 4: must not be saved by accident
+    app = types.SimpleNamespace(cfg=cfg, root=FakeTk(), events=queue.Queue(), settings=None,
+                                tracker=types.SimpleNamespace(camera=4, error=None),
+                                activity=types.SimpleNamespace(hooks=True))
+    app.set_options = lambda changes: (cfg.update(changes), config.save(changes))
+    win = settings.SettingsWindow(app)
+    saved = lambda: json.loads((tmp_path / "config.json").read_text())
+
+    assert set(win._show) == offered - {"camera"}    # every row but the camera can be reset
+    win._set("smoothing", 9)
+    assert cfg["smoothing"] == 9 and saved()["smoothing"] == 9 and saved()["camera"] == 0
+
+    for _ in range(100):            # the camera search runs on a thread and reports through the queue
+        if not app.events.empty():
+            break
+        time.sleep(0.02)
+    assert app.events.get() == ("cameras", [2, 4])
+    win.set_cameras([2, 4])
+    win._pick_camera(2)
+    assert saved()["camera"] == 2
+
+    win.reset()
+    assert cfg["smoothing"] == config.DEFAULTS["smoothing"] and saved()["smoothing"] == config.DEFAULTS["smoothing"]
+    assert saved()["camera"] == 2   # reset leaves the camera alone
+    win.close()
+    assert app.settings is None
+
+
+def test_dot_shape():
+    """The gaze dot is round at rest and a longer, thinner drop of the same area when it moves."""
+    import math
+    from gazehop.dot import RADIUS, blob
+
+    def area(pts):
+        return abs(sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(pts, pts[1:] + pts[:1]))) / 2
+
+    rest = blob((1.0, 0.0), 0.0)
+    assert all(abs(math.hypot(*p) - RADIUS) < 1e-6 for p in rest)
+    moving = blob((1.0, 0.0), 0.5)
+    xs, ys = [p[0] for p in moving], [p[1] for p in moving]
+    assert max(xs) - min(xs) > 2 * RADIUS > max(ys) - min(ys)
+    assert 0.75 * area(rest) < area(moving) <= area(rest) * 1.01       # the tail takes a little off
+    up = blob((0.0, -1.0), 0.5)
+    assert max(p[1] for p in up) - min(p[1] for p in up) > 2 * RADIUS   # stretched along the direction
