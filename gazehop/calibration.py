@@ -15,6 +15,7 @@ import tkinter as tk
 
 from .calibration_plan import EYES, MOVE, NOSE, plan, preview_spot
 from .model import GazeModel, OneEuro, Sample
+from .ui import toplevel
 
 PREVIOUS, NEW = "#9a9aa0", "#30d158"
 FAINT = "#4a4a52"       # the previous calibration's ring while the dots run: there, not distracting
@@ -51,7 +52,7 @@ class Calibration:
         self.done = False
         self.wins, self.canvases = [], []
         for r in self.screens:
-            w = tk.Toplevel(root)
+            w = toplevel(root)
             w.configure(bg="black")
             if sys.platform == "win32":
                 w.overrideredirect(True)

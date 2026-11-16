@@ -1,4 +1,4 @@
-# gazehop
+# GazeHop
 
 **Keyboard focus follows your eyes — on Ubuntu and Windows 11.** gazehop watches your webcam and
 gives keyboard focus to the screen or window you are looking at, so you can just start typing
@@ -59,8 +59,8 @@ Which session you are in matters (`echo $XDG_SESSION_TYPE`):
   apps focus other apps' windows, so gazehop goes through GNOME Shell with the
   [Window Calls](https://extensions.gnome.org/extension/4724/window-calls/) extension, which
   `install.sh` sets up (GNOME shows a dialog: click Install). In this mode there is no click
-  learning and no pause hotkey, minimised windows may be picked, and fractional display scaling
-  may put the gaze point slightly off.
+  learning and no pause hotkey, and fractional display scaling may put the gaze point slightly
+  off.
 
 ## The app
 
@@ -80,8 +80,10 @@ runs just says so.
   trails into a teardrop as it moves and rounds off when your eyes rest. Clicks go straight
   through it, and it hides during calibration. Light grey by default; pick another colour in
   Settings.
-- **Tray icon** — the same actions in a menu; closing the window keeps gazehop running in the
-  tray. Without tray support (see the installer's notes) closing the window quits.
+- **Tray icon** — there whenever gazehop runs, also when started from a terminal without the
+  window. The same actions in a menu, plus Open gazehop and Settings; closing the window keeps
+  gazehop running in the tray. Without tray support (see the installer's notes) closing the
+  window quits.
 
 ## Use from a terminal
 

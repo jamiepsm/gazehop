@@ -71,6 +71,10 @@ class WindowsBackend:
             except (AttributeError, OSError):
                 pass
         self._pid = os.getpid()
+        try:    # the taskbar groups gazehop under its own name and icon, not under python.exe's
+            ctypes.WinDLL("shell32").SetCurrentProcessExplicitAppUserModelID("gazehop")
+        except (AttributeError, OSError):
+            pass
 
     def screens(self) -> list:
         out = []

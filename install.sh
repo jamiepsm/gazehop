@@ -163,10 +163,11 @@ mkdir -p "$APPS"
 cat > "$APPS/gazehop.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
-Name=gazehop
+Name=GazeHop
 Comment=Keyboard focus follows your eyes
 Exec="$HERE/run.sh" --window
 Icon=$HERE/gazehop/assets/icon.png
+StartupWMClass=gazehop
 Terminal=false
 Categories=Utility;Accessibility;
 DESKTOP

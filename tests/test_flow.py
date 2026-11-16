@@ -312,7 +312,7 @@ def test_tray_menu_queues_events(faketk, monkeypatch):
     assert pause.text(pause) == "Pause"
     app.paused = True
     t.refresh()
-    assert pause.text(pause) == "Resume" and made["icon"].title == "gazehop (paused)"
+    assert pause.text(pause) == "Resume" and made["icon"].title == "GazeHop (paused)"
     before = made["redraws"]
     app.dot_visible = True              # turned on from the app window: the tray's checkmark must follow
     t.refresh()

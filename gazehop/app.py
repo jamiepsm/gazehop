@@ -21,8 +21,10 @@ class App:
                  window=False, tray=False):
         import tkinter as tk
         self.backend, self.cfg, self.dry_run = backend, cfg, dry_run
-        self.root = tk.Tk()
+        from .ui import APP_CLASS, set_icon
+        self.root = tk.Tk(className=APP_CLASS)
         self.root.withdraw()
+        set_icon(self.root)     # every window after this gets the icon
         self.screens = backend.screens()
         self.model_file = config.model_path(profile)
         self.profile = profile

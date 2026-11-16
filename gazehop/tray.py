@@ -10,7 +10,7 @@ import os
 import sys
 import threading
 
-from .ui import ASSETS
+from .ui import APP_NAME, ASSETS
 
 
 class Tray:
@@ -22,8 +22,8 @@ class Tray:
                         True: Image.open(os.path.join(ASSETS, "tray-paused.png"))}
         send = lambda *event: (lambda _icon=None, _item=None: app.events.put(event))
         item, menu = pystray.MenuItem, pystray.Menu
-        self.icon = pystray.Icon("gazehop", self._images[False], "gazehop", menu(
-            item("Open gazehop", send("window"), default=True),
+        self.icon = pystray.Icon("gazehop", self._images[False], APP_NAME, menu(
+            item(f"Open {APP_NAME}", send("window"), default=True),
             item(lambda _i: f"Update to {app.update[0]}…" if app.update else "", send("update_page"),
                  visible=lambda _i: app.update is not None),
             item(lambda _i: "Resume" if app.paused else "Pause", send("pause")),
@@ -46,7 +46,7 @@ class Tray:
             self._shown = now
             try:
                 self.icon.icon = self._images[now[0]]
-                self.icon.title = "gazehop (paused)" if now[0] else "gazehop"
+                self.icon.title = f"{APP_NAME} (paused)" if now[0] else APP_NAME
                 self.icon.update_menu()
             except Exception:
                 pass

@@ -9,9 +9,9 @@ import threading
 import tkinter as tk
 
 from . import config
-from .ui import ACCENT, BG, CARD, FG, LINE, MUTED, OFF, WARN, button, disc, font, set_icon
+from .ui import ACCENT, APP_NAME, BG, CARD, FG, LINE, MUTED, OFF, WARN, button, disc, font, toplevel
 
-RESTART = "Takes effect the next time gazehop starts."
+RESTART = f"Takes effect the next time {APP_NAME} starts."
 # tab -> rows of (key, label, explanation, control). A control is "switch", "camera", "hotkey",
 # or (lowest, highest, step, unit) for a slider.
 PAGES = [
@@ -39,10 +39,10 @@ PAGES = [
         ("camera", "Camera", RESTART, "camera"),
         ("smoothing", "Smoothing", "How many recent estimates are averaged. Lower is faster but jumpier.",
          (1, 20, 1, "")),
-        ("learn", "Learn from clicks", "Every click teaches gazehop where you were looking.", "switch"),
+        ("learn", "Learn from clicks", f"Every click teaches {APP_NAME} where you were looking.", "switch"),
     ]),
     ("Extras", [
-        ("show_dot", "Gaze dot", "Show where gazehop thinks you are looking.", "switch"),
+        ("show_dot", "Gaze dot", f"Show where {APP_NAME} thinks you are looking.", "switch"),
         ("dot_color", "Gaze dot colour", "Pick one, or choose your own.", "colour"),
         ("move_pointer", "Move the pointer", "Also put the mouse pointer on the window that gets focus.",
          "switch"),
@@ -191,11 +191,10 @@ class SettingsWindow:
         self.app = app
         self._show = {}             # key -> function that puts a value into that row's control
         self._cameras, self._camera_buttons = [app.tracker.camera], []
-        w = self.win = tk.Toplevel(app.root)
-        w.title("gazehop settings")
+        w = self.win = toplevel(app.root)
+        w.title(f"{APP_NAME} settings")
         w.configure(bg=BG, padx=18, pady=16)
         w.resizable(False, False)
-        set_icon(w)
         w.protocol("WM_DELETE_WINDOW", self.close)
         w.bind("<Escape>", lambda _e: self.close())
         tk.Label(w, text="Settings", bg=BG, fg=FG, font=font(16, "bold"), anchor="w").pack(fill="x")

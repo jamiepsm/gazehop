@@ -99,7 +99,8 @@ def cmd_run(args, calibrate_only=False) -> int:
         from .app import App
         app = App(backend, cfg, dry_run=args.dry_run, force_calibrate=calibrate_only or args.recalibrate,
                   add_round=args.add, profile=args.profile,
-                  window=args.window, tray=args.window and not args.no_tray)
+                  # the tray icon is there whenever gazehop is at work; `calibrate` quits when done
+                  window=args.window, tray=not (args.no_tray or calibrate_only))
     except ImportError as e:
         hint = "sudo apt install python3-tk" if "tkinter" in str(e) else "pip install -r requirements.txt"
         sys.exit(f"gazehop: missing dependency ({e}). Try: {hint}")
@@ -166,8 +167,8 @@ def main(argv=None) -> int:
     p.add_argument("--add", action="store_true",
                    help="with calibrate: add a round to the existing calibration instead of replacing it")
     p.add_argument("--window", action="store_true",
-                   help="open the app window (camera view, buttons) and a tray icon")
-    p.add_argument("--no-tray", action="store_true", help="with --window: no tray icon")
+                   help="open the app window (camera view, buttons); runs in the background")
+    p.add_argument("--no-tray", action="store_true", help="no tray icon")
     p.add_argument("--foreground", action="store_true",
                    help="with --window: stay attached to the terminal (Ctrl+C quits) instead of running in the background")
     p.add_argument("--profile", metavar="NAME",

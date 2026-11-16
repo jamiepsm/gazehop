@@ -88,8 +88,9 @@ class GnomeBackend:
                 continue
             wid = int(w["id"])
             seen.add(wid)
-            rect = self._frame(wid, w)
-            if rect is None or rect.w < 50 or rect.h < 50 or w.get("pid") == self._pid:
+            rect, minimized = self._frame(wid, w)
+            # a minimised window must stay minimised: focusing it would bring it back
+            if rect is None or minimized or rect.w < 50 or rect.h < 50 or w.get("pid") == self._pid:
                 continue
             win = Win(wid, rect, int(w.get("pid") or 0), w.get("title") or "")
             wins.append(win)
@@ -98,20 +99,24 @@ class GnomeBackend:
         self._rects = {k: v for k, v in self._rects.items() if k in seen}
         self._cache = (now, wins, active)
 
-    def _frame(self, wid: int, w: dict) -> Rect | None:
-        if all(isinstance(w.get(k), (int, float)) for k in ("x", "y", "width", "height")):
-            return Rect(w["x"], w["y"], w["width"], w["height"])
-        # older/newer extension versions leave the geometry out of List; ask per window, briefly cached
+    def _frame(self, wid: int, w: dict) -> tuple:
+        """(Rect | None, minimised?) for one window. List leaves both out in most extension
+        versions; Details has them (older versions only have GetFrameRect). Briefly cached."""
+        if "minimized" in w and all(isinstance(w.get(k), (int, float)) for k in ("x", "y", "width", "height")):
+            return Rect(w["x"], w["y"], w["width"], w["height"]), bool(w["minimized"])
         hit = self._rects.get(wid)
         if hit and time.monotonic() - hit[0] < 1.0:
             return hit[1]
         try:
-            f = json.loads(parse_gvariant_string(self._call("GetFrameRect", wid)))
-            rect = Rect(f["x"], f["y"], f["width"], f["height"])
+            f = json.loads(parse_gvariant_string(self._call("Details", wid)))
         except Exception:
-            return None
-        self._rects[wid] = (time.monotonic(), rect)
-        return rect
+            try:
+                f = json.loads(parse_gvariant_string(self._call("GetFrameRect", wid)))
+            except Exception:
+                return None, False
+        found = Rect(f["x"], f["y"], f["width"], f["height"]), bool(f.get("minimized"))
+        self._rects[wid] = (time.monotonic(), found)
+        return found
 
     def windows(self) -> list:
         self._refresh()

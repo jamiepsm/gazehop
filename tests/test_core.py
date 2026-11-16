@@ -294,3 +294,18 @@ def test_one_instance(tmp_path, monkeypatch):
     again = cli.lock_instance()
     assert again is not None
     again.close()
+
+
+def test_gnome_skips_minimised_windows():
+    """A minimised window is never a focus target: focusing it would bring it back on screen."""
+    import json
+    from gazehop.backends.gnome import GnomeBackend
+    b = GnomeBackend.__new__(GnomeBackend)      # no D-Bus: answers come from the dict below
+    b._pid, b._cache, b._rects = 1, (0.0, [], None), {}
+    listed = [{"id": 1, "title": "editor", "pid": 5, "focus": True},
+              {"id": 2, "title": "minimised video", "pid": 6}]
+    details = {1: {"x": 0, "y": 0, "width": 800, "height": 600, "minimized": False},
+               2: {"x": 0, "y": 0, "width": 1920, "height": 1080, "minimized": True}}
+    reply = lambda obj: "('" + json.dumps(obj) + "',)"
+    b._call = lambda method, *a: reply(listed) if method == "List" else reply(details[a[0]])
+    assert [w.title for w in b.windows()] == ["editor"] and b.active_window().title == "editor"
