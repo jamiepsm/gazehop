@@ -328,8 +328,13 @@ def test_settings_window(faketk, monkeypatch, tmp_path):
         for key, _label, _hint, control in rows:
             if isinstance(control, tuple):
                 assert control[0] <= config.DEFAULTS[key] <= control[1], key
-    assert settings.valid_hotkey("<ctrl>+<alt>+g") and not settings.valid_hotkey("g")
-    assert not settings.valid_hotkey("<nonsense>+g")
+    try:
+        from pynput import keyboard     # needs a display on Linux; CI has none
+    except Exception:
+        keyboard = None
+    if keyboard:                        # without pynput the app offers no shortcut to validate
+        assert settings.valid_hotkey("<ctrl>+<alt>+g") and not settings.valid_hotkey("g")
+        assert not settings.valid_hotkey("<nonsense>+g")
 
     cfg = config.load()
     cfg["camera"] = 4               # as if started with --camera 4: must not be saved by accident
