@@ -309,3 +309,41 @@ def test_gnome_skips_minimised_windows():
     reply = lambda obj: "('" + json.dumps(obj) + "',)"
     b._call = lambda method, *a: reply(listed) if method == "List" else reply(details[a[0]])
     assert [w.title for w in b.windows()] == ["editor"] and b.active_window().title == "editor"
+
+
+def _dots(rng, target, n_dots=64, frames=8):
+    """Calibration-like samples: n_dots dots, several noisy face readings each."""
+    from gazehop.model import Sample
+    mix = [(rng.gauss(0, 1), rng.gauss(0, 1)) for _ in range(144)]     # eye pixels change with the gaze
+    out = []
+    for _ in range(n_dots):
+        u, v = rng.uniform(-1, 1), rng.uniform(-1, 1)
+        x, y = target(u, v)
+        for _ in range(frames):
+            f = [u + rng.gauss(0, 0.01), v + rng.gauss(0, 0.01)] + [rng.gauss(0, 0.01) for _ in range(6)]
+            f[5] = 0.25
+            out.append(Sample(f + [a * u + b * v + rng.gauss(0, 0.05) for a, b in mix], x, y, x, y))
+    return out
+
+
+def test_kernel_kept_only_where_it_helps(tmp_path):
+    """Gaze that bends (here: cubic in head turn) gets the non-linear correction and a much smaller
+    held-out error; gaze the linear model already explains gets none."""
+    from gazehop.model import GazeModel
+    screens = [Rect(0, 0, 2000, 1000)]
+    bent = _dots(random.Random(1), lambda u, v: (1000 + 300 * u + 600 * u ** 3, 500 + 300 * v + 150 * u * v))
+    m = GazeModel.fit(bent, screens)
+    assert m.kernel is not None
+    plain = GazeModel(m.head, m.full, m.screens, m.calib).typical_error()      # same data, linear only
+    assert m.typical_error() < 0.7 * plain, (m.typical_error(), plain)
+
+    straight = _dots(random.Random(2), lambda u, v: (1000 + 600 * u, 500 + 300 * v))
+    assert GazeModel.fit(straight, screens).kernel is None
+
+    path = str(tmp_path / "model.json")         # saved and loaded, it predicts the same
+    m.save(path)
+    again = GazeModel.load(path, screens)
+    assert again.kernel is not None and again.typical_error() == m.typical_error()
+    assert again.predict(bent[5].f) == pytest.approx(m.predict(bent[5].f), abs=0.01)
+    refit = again.refit()                       # click learning keeps it without refitting it
+    assert refit.kernel is again.kernel

@@ -3,6 +3,8 @@
 A Python port of the model in Eyeshift (MIT, (c) 2026 Sarthak Chhabra):
 two ridge regressions (head pose only picks the screen; head + eyes finds the
 point on it) plus a local correction layer learned from everyday clicks.
+gazehop adds a non-linear correction of the point, learned from the calibration
+and kept only for people it measurably helps.
 """
 from __future__ import annotations
 
@@ -20,6 +22,10 @@ N_POSE = 8              # yaw, pitch, roll, faceX, faceY, faceWidth, irisX, iris
 PER_SITUATION = 3
 MAX_LEARNED = 1500
 NUDGE_PRIOR = 3.0
+# the non-linear correction (RBF kernel ridge): settings that cut the held-out error by 24% on the
+# first real 4-screen calibration; it is only kept where it beats the linear model by 5%
+KERNEL_GAMMA, KERNEL_LAM, KERNEL_GAIN = 1.0, 0.3, 0.95
+KERNEL_MAX = 3000       # calibration samples it keeps: fitting time grows with the cube of this
 
 
 @dataclass
@@ -64,6 +70,10 @@ class Regressor:
         z = np.concatenate(([1.0], (np.asarray(v, float) - self._mean) / self._std))
         p = z @ self._w
         return float(p[0]), float(p[1])
+
+    def predict_many(self, X):
+        Z = (np.asarray(X, float) - self._mean) / self._std
+        return np.hstack([np.ones((len(Z), 1)), Z]) @ self._w
 
     @staticmethod
     def fit(xs, targets, weights, lam: float) -> "Regressor | None":
@@ -110,6 +120,80 @@ class Regressor:
         return {"mean": self.mean, "std": self.std, "wx": self.wx, "wy": self.wy, "lam": self.lam}
 
 
+def _rbf(A, B, gamma: float):
+    """Similarity of every row of A to every row of B: 1 for identical, toward 0 for far apart."""
+    d2 = (A * A).sum(axis=1)[:, None] + (B * B).sum(axis=1)[None, :] - 2 * A @ B.T
+    return np.exp(-gamma * np.maximum(d2, 0) / A.shape[1])
+
+
+@dataclass
+class Kernel:
+    """What the linear model gets wrong, learned non-linearly from calibration samples: a
+    prediction is nudged by how wrong the linear model was for similar-looking face readings."""
+    mean: list
+    std: list
+    rows: list          # which calibration samples it compares against
+    alpha: list         # their weights, [x, y] each
+    gamma: float = KERNEL_GAMMA
+
+    def attach(self, calib) -> "Kernel":
+        """Rebuilds the arrays from the calibration samples (they are not stored twice)."""
+        self._mean, self._std, self._alpha = np.asarray(self.mean), np.asarray(self.std), np.asarray(self.alpha)
+        self._a = (np.array([full_features(calib[i].f) for i in self.rows], float) - self._mean) / self._std
+        return self
+
+    def predict_many(self, X):
+        return _rbf((np.asarray(X, float) - self._mean) / self._std, self._a, self.gamma) @ self._alpha
+
+    @staticmethod
+    def fit(X, R, rows) -> "Kernel":
+        """X: features of the calibration samples `rows`; R: the linear model's error on them."""
+        mean, std = X.mean(axis=0), np.maximum(X.std(axis=0), 1e-6)
+        A = (X - mean) / std
+        alpha = np.linalg.solve(_rbf(A, A, KERNEL_GAMMA) + KERNEL_LAM * np.eye(len(A)), R)
+        return Kernel(mean.tolist(), std.tolist(), [int(i) for i in rows], alpha.tolist())
+
+
+def choose_kernel(calib, lam: float):
+    """(lambda for the linear model under the kernel, held-out error in px), or (None, error of
+    the linear model alone) if no kernel helps. Every 4th calibration dot is held out; on them a
+    linear model plus kernel learned on the other dots must beat the linear model alone. The
+    linear model may be smoother under a kernel (it learns the curves), so 10 x lambda is tried too."""
+    dots: dict = {}
+    group = np.array([dots.setdefault((int(s.x), int(s.y)), len(dots)) for s in calib])
+    test, train = group % 4 == 0, group % 4 != 0
+    if test.sum() < 5 or train.sum() < 20:
+        return None, None
+    X = np.array([full_features(s.f) for s in calib], float)
+    Y, W = np.array([(s.x, s.y) for s in calib], float), np.array([s.w for s in calib], float)
+    rows = _cap(np.flatnonzero(train))
+    err = lambda P: float(np.median(np.hypot(*(P[test] - Y[test]).T)))
+    plain, best = None, (None, None)
+    for l in (lam, 10 * lam):
+        lin = Regressor.fit(X[train], Y[train], W[train], l)
+        if lin is None:
+            continue
+        P = lin.predict_many(X)
+        plain = err(P) if plain is None else plain      # the linear model alone, as the app fits it
+        e = err(P + Kernel.fit(X[rows], Y[rows] - P[rows], rows).attach(calib).predict_many(X))
+        if best[1] is None or e < best[1]:
+            best = (l, e)
+    if plain is None or best[1] > KERNEL_GAIN * plain:
+        return None, plain
+    return best
+
+
+def _cap(idx):
+    return idx[np.linspace(0, len(idx) - 1, min(len(idx), KERNEL_MAX)).astype(int)]
+
+
+def kernel_for(calib, full: Regressor) -> Kernel:
+    """The kernel learned on all calibration samples, against the final linear model."""
+    X = np.array([full_features(s.f) for s in calib], float)
+    rows = _cap(np.arange(len(calib)))
+    return Kernel.fit(X[rows], np.array([(s.x, s.y) for s in calib], float)[rows] - full.predict_many(X[rows]), rows)
+
+
 def screen_signature(screens) -> str:
     return ";".join(f"{int(r.x)},{int(r.y)},{int(r.w)},{int(r.h)}" for r in screens)
 
@@ -125,8 +209,12 @@ class GazeModel:
     keyboard_line: float | None = None  # head/gaze below this y = looking at the keyboard
     median_width: float | None = None
     pose_std: list | None = None
+    kernel: Kernel | None = None        # the non-linear correction, if it helps this person
+    error: float | None = None          # held-out median error in px, measured when fitted
 
     def __post_init__(self):
+        if self.kernel is not None:
+            self.kernel.attach(self.calib)
         self._index()
 
     def _index(self):
@@ -145,9 +233,18 @@ class GazeModel:
     def predict_head(self, f) -> tuple[float, float]:
         return self.head.predict(head_features(f))
 
+    def _base(self, f) -> tuple[float, float]:
+        """Linear model plus the non-linear correction learned from the calibration."""
+        v = full_features(f)
+        p = self.full.predict(v)
+        if self.kernel is None:
+            return p
+        c = self.kernel.predict_many([v])[0]
+        return p[0] + float(c[0]), p[1] + float(c[1])
+
     def predict(self, f) -> tuple[float, float]:
-        """Linear model plus the local correction learned from everyday use."""
-        p = self.full.predict(full_features(f))
+        """The calibrated prediction plus the local correction learned from everyday use."""
+        p = self._base(f)
         c = self.correction(f, p)
         return p[0] + c[0], p[1] + c[1]
 
@@ -179,7 +276,7 @@ class GazeModel:
         """Stores a sample. It only pushes out an older one from the same situation, so a posture
         you use rarely is never forgotten just because it is old. Call refit() to learn fully."""
         s.key = self.situation(s)
-        p = self.full.predict(full_features(s.f))
+        p = self._base(s.f)
         s.rx, s.ry = s.x - p[0], s.y - p[1]
         same = [i for i, o in enumerate(self.learned) if o.key == s.key]
         if len(same) >= PER_SITUATION:
@@ -193,11 +290,15 @@ class GazeModel:
         self._index()
 
     def refit(self) -> "GazeModel | None":
+        # ponytail: the kernel learned the calibration's errors against the linear model as it was;
+        # clicks move that model only gently (weight 0.3), so it is reused rather than refitted
+        # (fitting takes seconds, and refits happen while you work)
         return GazeModel.fit(self.calib, self.screens, self.learned, self.keyboard,
-                             lambdas=(self.head.lam, self.full.lam))
+                             lambdas=(self.head.lam, self.full.lam), reuse=(self.kernel, self.error))
 
     @staticmethod
-    def fit(calib, screens, learned=(), keyboard=(), lam=None, lambdas=None) -> "GazeModel | None":
+    def fit(calib, screens, learned=(), keyboard=(), lam=None, lambdas=None, reuse=None) -> "GazeModel | None":
+        """`reuse`: (kernel, error) to keep instead of fitting a new kernel."""
         calib, learned, keyboard = list(calib), list(learned), list(keyboard)
         # everyday samples steer the overall model only gently; local errors are the correction layer's job
         rows = [(s, s.w) for s in calib] + [(s, s.w * 0.3) for s in learned]
@@ -209,10 +310,20 @@ class GazeModel:
                                   [w for _, w in rows], lambdas[1] if lambdas else lam)
         if head is None or full is None:
             return None
-        for s in learned:       # residuals against the new linear model drive the local correction
-            p = full.predict(full_features(s.f))
+        if reuse is not None:
+            kernel, error = reuse
+        else:
+            lam_k, error = choose_kernel(calib, full.lam)
+            if lam_k is not None and lam_k != full.lam:     # smoother under the kernel
+                full = Regressor.fit([full_features(s.f) for s, _ in rows], [(s.x, s.y) for s, _ in rows],
+                                     [w for _, w in rows], lam_k)
+            kernel = kernel_for(calib, full) if lam_k is not None and full is not None else None
+        if full is None:
+            return None
+        m = GazeModel(head, full, [Rect(*r) for r in screens], calib, keyboard, learned, kernel=kernel, error=error)
+        for s in learned:       # residuals against the new calibrated model drive the local correction
+            p = m._base(s.f)
             s.rx, s.ry = s.x - p[0], s.y - p[1]
-        m = GazeModel(head, full, [Rect(*r) for r in screens], calib, keyboard, learned)
         if calib:
             pose = np.array([s.f[:N_POSE] for s in calib], float)
             m.median_width = float(np.median(pose[:, 5]))
@@ -227,6 +338,8 @@ class GazeModel:
     def typical_error(self) -> float | None:
         """Median error in pixels on calibration dots the model was not fitted on (every 4th dot is
         held out and predicted from the others). None with too little data."""
+        if self.error is not None:
+            return self.error
         dots: dict = {}
         group = [dots.setdefault((int(s.x), int(s.y)), len(dots)) for s in self.calib]
         test = [s for s, g in zip(self.calib, group) if g % 4 == 0]
@@ -248,7 +361,8 @@ class GazeModel:
                 "screens": [list(r) for r in self.screens],
                 "calib": [asdict(s) for s in self.calib], "keyboard": [asdict(s) for s in self.keyboard],
                 "learned": [asdict(s) for s in self.learned], "keyboard_line": self.keyboard_line,
-                "median_width": self.median_width, "pose_std": self.pose_std}
+                "median_width": self.median_width, "pose_std": self.pose_std,
+                "kernel": asdict(self.kernel) if self.kernel else None, "error": self.error}
         for key in ("calib", "keyboard", "learned"):       # 5 decimals is plenty and keeps the file small
             for s in data[key]:
                 s["f"] = [round(v, 5) for v in s["f"]]
@@ -271,7 +385,8 @@ class GazeModel:
             return GazeModel(Regressor(**d["head"]), Regressor(**d["full"]), saved,
                              [Sample(**s) for s in d["calib"]], [Sample(**s) for s in d["keyboard"]],
                              [Sample(**s) for s in d["learned"]], d.get("keyboard_line"),
-                             d.get("median_width"), d.get("pose_std"))
+                             d.get("median_width"), d.get("pose_std"),
+                             Kernel(**d["kernel"]) if d.get("kernel") else None, d.get("error"))
         except (OSError, ValueError, KeyError, TypeError):
             return None
 
