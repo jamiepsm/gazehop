@@ -46,6 +46,8 @@ PAGES = [
         ("move_pointer", "Move the pointer", "Also put the mouse pointer on the window that gets focus.",
          "switch"),
         ("hotkey", "Pause shortcut", "For example <ctrl>+<alt>+g. " + RESTART, "hotkey"),
+        ("check_updates", "Check for updates",
+         "Once per start, ask GitHub whether a newer version is out. Nothing about you is sent.", "switch"),
     ]),
 ]
 

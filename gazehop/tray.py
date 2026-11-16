@@ -24,6 +24,8 @@ class Tray:
         item, menu = pystray.MenuItem, pystray.Menu
         self.icon = pystray.Icon("gazehop", self._images[False], "gazehop", menu(
             item("Open gazehop", send("window"), default=True),
+            item(lambda _i: f"Update to {app.update[0]}…" if app.update else "", send("update_page"),
+                 visible=lambda _i: app.update is not None),
             item(lambda _i: "Resume" if app.paused else "Pause", send("pause")),
             menu.SEPARATOR,
             item("Calibrate (start over)…", send("calibrate", False)),
@@ -32,17 +34,18 @@ class Tray:
             item("Settings…", send("settings")),
             menu.SEPARATOR,
             item("Quit", send("quit"))))
-        self._paused = False
+        self._shown = (False, None)     # (paused, update) the icon and menu were last drawn for
         self._thread = threading.Thread(target=self.icon.run, name="gazehop-tray", daemon=True)
         self._thread.start()
 
     def refresh(self) -> None:
         """Called from the main loop: keeps the icon and menu in step with the app."""
-        if self.app.paused != self._paused:
-            self._paused = self.app.paused
+        now = (self.app.paused, self.app.update)
+        if now != self._shown:
+            self._shown = now
             try:
-                self.icon.icon = self._images[self._paused]
-                self.icon.title = "gazehop (paused)" if self._paused else "gazehop"
+                self.icon.icon = self._images[now[0]]
+                self.icon.title = "gazehop (paused)" if now[0] else "gazehop"
                 self.icon.update_menu()
             except Exception:
                 pass

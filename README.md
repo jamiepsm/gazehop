@@ -11,7 +11,9 @@ without clicking first.
 - **Keeps learning** — every click is a hint of where you were looking; a click elsewhere right
   after a switch counts as a correction.
 - **Private** — frames are processed in memory and dropped. Nothing is recorded or sent anywhere.
-  The only network use is a one-time download of the face model (about 4 MB, from Google).
+  The only network use is a one-time download of the face model (about 4 MB, from Google) and,
+  once per start, a check on GitHub for a newer version (nothing about you is sent; switch it off
+  in Settings).
 
 Webcam eye tracking is good to roughly a thumbnail-sized area. That is enough to pick a window; it
 is **not** precise enough to replace the mouse pointer.
@@ -147,6 +149,14 @@ Linux) if you prefer to edit them by hand; restart afterwards.
 | `move_pointer` | false | Also move the mouse pointer to the focused window |
 | `show_dot` | false | Always draw the gaze dot |
 | `hotkey` | `<ctrl>+<alt>+g` | Pause/resume |
+| `check_updates` | true | Check once per start whether a newer version is out |
+
+## Updating
+
+When a newer version is out, the app window and the tray menu say so. If you downloaded gazehop
+from the Releases page, download the new version and replace your copy (your settings and
+calibration are kept: they live in the folder above, not next to the app). If you installed it
+from a copy of the source, run `git pull` and then the installer again.
 
 ## Something not working?
 

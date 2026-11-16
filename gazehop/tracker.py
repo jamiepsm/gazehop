@@ -153,11 +153,11 @@ def open_camera(index: int):
     return cap
 
 
-def list_cameras(skip=(), limit: int = 6) -> list:
+def list_cameras(skip=()) -> list:
     """(index, width, height) of every camera that delivers a picture. `skip`: indices to leave
     alone — a camera that is in use cannot be opened a second time."""
     found = []
-    for i in range(limit):
+    for i in range(6):
         cap = None if i in skip else open_camera(i)
         if cap is None:
             continue

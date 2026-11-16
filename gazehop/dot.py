@@ -20,15 +20,15 @@ WOBBLE_K, WOBBLE_C = 260.0, 11.0    # the stretch has its own, bouncier spring: 
 FRAME_MS = 16
 
 
-def blob(direction, stretch: float, grow: float = 0.0, n: int = 40) -> list:
+def blob(direction, stretch: float, grow: float = 0.0) -> list:
     """Outline of the droplet around (0, 0). Round at rest; with `stretch` > 0 it is longer along
     `direction` (a unit vector) with a narrower tail, with `stretch` < 0 it is squashed instead.
     Its area stays about the same, as a drop of liquid's would."""
     a, b = (RADIUS + grow) * (1 + stretch), (RADIUS + grow) / (1 + stretch)
     taper = max(0.0, min(0.45, stretch))
     (ca, sa), pts = direction, []
-    for i in range(n):
-        t = 2 * math.pi * i / n
+    for i in range(40):
+        t = 2 * math.pi * i / 40
         x, y = a * math.cos(t), b * math.sin(t) * (1 - taper * (1 - math.cos(t)) / 2)
         pts.append((x * ca - y * sa, x * sa + y * ca))
     return pts

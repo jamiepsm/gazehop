@@ -258,3 +258,26 @@ def test_overlay_and_ppm():
         from gazehop.ui import ppm
         data = ppm(marked)
         assert data.startswith(b"P6 480 360 255\n") and len(data) == 15 + 480 * 360 * 3
+
+
+def test_update_check(monkeypatch):
+    """Only a real, newer release of this project counts; offline or odd replies are ignored."""
+    import io
+    import json
+    from gazehop import update
+    page = update.RELEASES + "/tag/v0.10.0"
+    assert update.parse("v0.10.0") == (0, 10, 0) and update.parse("v1.0-beta") is None
+    assert update.newer({"tag_name": "v0.10.0", "html_url": page}, "0.9.9") == ("0.10.0", page)  # not string order
+    assert update.newer({"tag_name": "v0.10.0", "html_url": page}, "0.10.0") is None
+    assert update.newer({"tag_name": "v0.3.0", "html_url": page}, "0.10.0") is None
+    assert update.newer({"tag_name": "v9.0.0", "html_url": "https://evil.example/x"}, "0.1.0") is None
+    assert update.newer({}, "0.1.0") is None
+
+    reply = json.dumps({"tag_name": "v99.0.0", "html_url": update.RELEASES + "/tag/v99.0.0"}).encode()
+    monkeypatch.setattr(update.urllib.request, "urlopen", lambda req, timeout: io.BytesIO(reply))
+    assert update.check() == ("99.0.0", update.RELEASES + "/tag/v99.0.0")
+
+    def offline(req, timeout):
+        raise OSError("no network")
+    monkeypatch.setattr(update.urllib.request, "urlopen", offline)
+    assert update.check() is None

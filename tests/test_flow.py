@@ -287,7 +287,7 @@ def test_tray_menu_queues_events(faketk, monkeypatch):
     monkeypatch.setitem(sys.modules, "pystray", fake)
     from gazehop import tray
 
-    app = types.SimpleNamespace(events=queue.Queue(), paused=False, dot_visible=False)
+    app = types.SimpleNamespace(events=queue.Queue(), paused=False, dot_visible=False, update=None)
     t = tray.start(app)
     assert t is not None
     for it in made["menu"].items:
@@ -296,9 +296,15 @@ def test_tray_menu_queues_events(faketk, monkeypatch):
     got = []
     while not app.events.empty():
         got.append(app.events.get())
-    assert got == [("window",), ("pause",), ("calibrate", False), ("calibrate", True), ("dot",),
-                   ("settings",), ("quit",)]
-    pause = made["menu"].items[1]
+    assert got == [("window",), ("update_page",), ("pause",), ("calibrate", False), ("calibrate", True),
+                   ("dot",), ("settings",), ("quit",)]
+    update = made["menu"].items[1]
+    app.update = None
+    assert update.k["visible"](update) is False                # hidden until a newer version is known
+    app.update = ("9.9.9", "https://github.com/jamiepsm/gazehop/releases/tag/v9.9.9")
+    assert update.k["visible"](update) and update.text(update) == "Update to 9.9.9…"
+    app.update = None
+    pause = made["menu"].items[2]
     assert pause.text(pause) == "Pause"
     app.paused = True
     t.refresh()

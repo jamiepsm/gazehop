@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 import queue
 import sys
+import threading
 import time
 
 from . import config
@@ -56,6 +57,7 @@ class App:
         self._want_window, self._want_tray = window, tray
         self.window = None              # the app window (camera view), if open
         self.settings = None            # the settings window, if open
+        self.update = None              # (version, release page) once a newer version is known
         self.tray = None
 
     # ---- lifecycle
@@ -80,6 +82,10 @@ class App:
             self.tray = tray.start(self)
         if self._want_window:
             self.open_window()
+        if self.cfg["check_updates"]:
+            from . import update
+            threading.Thread(target=lambda: self.events.put(("update", update.check())),
+                             name="gazehop-update", daemon=True).start()
         self.root.after(30, self._pump)
         try:
             self.root.mainloop()
@@ -178,6 +184,13 @@ class App:
                 self.open_settings()
             elif ev[0] == "cameras" and self.settings:
                 self.settings.set_cameras(ev[1])
+            elif ev[0] == "update" and ev[1]:
+                from .update import how_to_update
+                self.update = ev[1]
+                print(f"gazehop: version {ev[1][0]} is out: {ev[1][1]}  {how_to_update()}")
+            elif ev[0] == "update_page" and self.update:
+                import webbrowser
+                webbrowser.open(self.update[1])
             elif ev[0] == "quit":
                 self.quit()
         if self.tray:

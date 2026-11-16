@@ -20,6 +20,7 @@ DEFAULTS = {
     "move_pointer": False,    # also move the mouse pointer to the newly focused window
     "show_dot": False,        # draw where gazehop thinks you are looking
     "hotkey": "<ctrl>+<alt>+g",   # pause / resume
+    "check_updates": True,    # ask GitHub once per start whether a newer version is out
     "config_version": 2,
 }
 # defaults of config version 1; a value still equal to one of these was never changed by the user

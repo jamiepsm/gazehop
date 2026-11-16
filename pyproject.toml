@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gazehop"
-version = "0.2.0"
+dynamic = ["version"]     # from gazehop/__init__.py: the one place to change it
 description = "Keyboard focus follows your eyes, with an ordinary webcam (Linux + Windows)"
 readme = "README.md"
 license = { text = "MIT" }
@@ -13,6 +13,9 @@ dependencies = ["numpy", "opencv-contrib-python", "mediapipe", "pynput", "pystra
 
 [project.scripts]
 gazehop = "gazehop.__main__:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "gazehop.__version__" }
 
 [tool.setuptools]
 packages = ["gazehop", "gazehop.backends"]

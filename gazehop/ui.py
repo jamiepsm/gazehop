@@ -97,8 +97,9 @@ class ControlWindow:
                           text="Green outline: face and eyes found.  White circles: irises.\n"
                                "White boxes: the eye pixels the model reads.  Orange arrow: where your head points.")
         legend.pack(fill="x", padx=14, pady=(0, 8))
-        row = tk.Frame(w, bg=BG)
+        row = self._row = tk.Frame(w, bg=BG)
         row.pack(fill="x", padx=10, pady=(0, 12))
+        self._update_bar = None
         self.buttons = {}
         for key, text, action, side in (("pause", "Pause", app.toggle_pause, "left"),
                                         ("calibrate", "Calibrate", lambda: app.request_calibration(add=False), "left"),
@@ -143,3 +144,16 @@ class ControlWindow:
         self.buttons["pause"].configure(text="Resume" if app.paused else "Pause")
         self.buttons["dot"].configure(text="Hide gaze dot" if app.dot_visible else "Show gaze dot")
         self.buttons["add"].configure(state="normal" if app.model is not None else "disabled")
+        if app.update and self._update_bar is None:
+            self._show_update(*app.update)
+
+    def _show_update(self, version: str, _page: str) -> None:
+        from .update import how_to_update
+        bar = self._update_bar = tk.Frame(self.win, bg=CARD, padx=12, pady=8)
+        bar.pack(fill="x", padx=12, pady=(0, 10), before=self._row)
+        text = tk.Frame(bar, bg=CARD)
+        text.pack(side="left", fill="x", expand=True)
+        tk.Label(text, text=f"gazehop {version} is available", bg=CARD, fg=FG, font=font(10, "bold"),
+                 anchor="w").pack(fill="x")
+        tk.Label(text, text=how_to_update(), bg=CARD, fg=MUTED, font=font(9), anchor="w").pack(fill="x")
+        button(bar, "What's new", lambda: self.app.events.put(("update_page",)), primary=True, on=CARD).pack(side="right")
