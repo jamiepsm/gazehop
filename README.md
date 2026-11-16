@@ -165,7 +165,8 @@ Linux) if you prefer to edit them by hand; restart afterwards.
 When a newer version is out, the app window and the tray menu say so. If you downloaded gazehop
 from the Releases page, download the new version and replace your copy (your settings and
 calibration are kept: they live in the folder above, not next to the app). If you installed it
-from a copy of the source, run `git pull` and then the installer again.
+from a copy of the source, run `git pull` and then the installer again. Now and then a new version
+reads the eyes differently and asks you to calibrate again; it says so when it starts.
 
 ## Something not working?
 

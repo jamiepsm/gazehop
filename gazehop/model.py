@@ -17,7 +17,7 @@ import numpy as np
 
 from .geometry import Rect
 
-VERSION = 1
+VERSION = 2             # 2: eye pictures are turned level; version 1 calibrations no longer fit
 N_POSE = 8              # yaw, pitch, roll, faceX, faceY, faceWidth, irisX, irisY
 PER_SITUATION = 3
 MAX_LEARNED = 1500

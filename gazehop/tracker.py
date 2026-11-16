@@ -47,16 +47,35 @@ def pose_angles(m) -> tuple[float, float, float]:
     return yaw, pitch, roll
 
 
-def eye_patch(gray, cx: float, cy: float, eye_w: float):
-    """A small greyscale picture of the eye, normalised so lighting doesn't matter. None if off-frame."""
+def eye_box(cx: float, cy: float, eye_w: float, angle: float) -> list:
+    """The four corners of the eye picture in the camera frame: 1.3 x 0.65 eye widths around the
+    eye's centre, turned by `angle` (radians)."""
+    pw, ph, c, s = eye_w * 1.3, eye_w * 0.65, math.cos(angle), math.sin(angle)
+    return [(cx + c * dx - s * dy, cy + s * dx + c * dy) for dx, dy in
+            ((-pw / 2, -ph / 2), (pw / 2, -ph / 2), (pw / 2, ph / 2), (-pw / 2, ph / 2))]
+
+
+def eye_patch(gray, cx: float, cy: float, eye_w: float, angle: float = 0.0):
+    """A small greyscale picture of the eye, turned level by `angle` (the tilt of the line between
+    the eyes, radians) so a tilted head shows the same eye picture, and normalised so lighting
+    doesn't matter. None if off-frame."""
     import cv2
-    pw, ph = eye_w * 1.3, eye_w * 0.65
-    x0, y0, x1, y1 = int(cx - pw / 2), int(cy - ph / 2), int(math.ceil(cx + pw / 2)), int(math.ceil(cy + ph / 2))
     h, w = gray.shape[:2]
-    if eye_w < 8 or x0 < 0 or y0 < 0 or x1 > w or y1 > h:
+    if eye_w < 8 or any(not (0 <= x <= w and 0 <= y <= h) for x, y in eye_box(cx, cy, eye_w, angle)):
         return None
-    v = cv2.resize(gray[y0:y1, x0:x1], (PATCH_W, PATCH_H), interpolation=cv2.INTER_AREA).astype(float).ravel()
+    k = 4       # sampled 4x finer, then averaged down: sampling a small eye directly would alias
+    W, H = PATCH_W * k, PATCH_H * k
+    sx, sy, c, s = eye_w * 1.3 / W, eye_w * 0.65 / H, math.cos(angle), math.sin(angle)
+    to_frame = np.array([[c * sx, -s * sy, cx - c * sx * W / 2 + s * sy * H / 2],     # picture -> frame pixels
+                         [s * sx, c * sy, cy - s * sx * W / 2 - c * sy * H / 2]])
+    big = cv2.warpAffine(gray, to_frame, (W, H), flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP)
+    v = cv2.resize(big, (PATCH_W, PATCH_H), interpolation=cv2.INTER_AREA).astype(float).ravel()
     return ((v - v.mean()) / max(1.0, v.std())).tolist()
+
+
+def eye_tilt(left_mid, right_mid) -> float:
+    """The tilt of the line between the eyes' centres (radians): how far the head rolls."""
+    return math.atan2(right_mid[1] - left_mid[1], right_mid[0] - left_mid[0])
 
 
 def features(landmarks, matrix, gray):
@@ -66,7 +85,7 @@ def features(landmarks, matrix, gray):
     yaw, pitch, roll = pose_angles(matrix)
     x0, y0 = lm[:468].min(axis=0)
     x1, y1 = lm[:468].max(axis=0)
-    iris, patches = [], []
+    iris, eyes, patches = [], [], []
     for outer, inner, upper, lower, centre in EYES:
         a, b = lm[outer], lm[inner]
         axis = b - a
@@ -79,7 +98,10 @@ def features(landmarks, matrix, gray):
         d = lm[centre] - mid
         # iris position along / across the eye, in eye widths; 0.5 = centred
         iris.append((0.5 + float(d @ u) / eye_w, 0.5 + float(d @ n) / eye_w))
-        patch = eye_patch(gray, mid[0], mid[1], eye_w)
+        eyes.append((mid, eye_w))
+    tilt = eye_tilt(eyes[0][0], eyes[1][0])
+    for mid, eye_w in eyes:
+        patch = eye_patch(gray, mid[0], mid[1], eye_w, tilt)
         if patch is None:
             return None
         patches += patch
@@ -122,15 +144,16 @@ def draw_overlay(frame, pts, readable: bool):
     x0, y0 = p[:468].min(axis=0)
     x1, y1 = p[:468].max(axis=0)
     cv2.rectangle(img, (int(x0), int(y0)), (int(x1), int(y1)), colour, 1, cv2.LINE_AA)
+    # the picture is mirrored, so the eyes swap sides: the tilt is measured the other way round
+    tilt = eye_tilt((p[EYES[1][0]] + p[EYES[1][1]]) / 2, (p[EYES[0][0]] + p[EYES[0][1]]) / 2)
     for ring, iris, (outer, inner, *_rest) in zip(EYE_RINGS, IRIS_RINGS, EYES):
         cv2.polylines(img, [np.array([q(i) for i in ring], np.int32)], True, colour, 1, cv2.LINE_AA)
         rad = max(2, int(round(np.mean([np.hypot(*(p[i] - p[iris[0]])) for i in iris[1:]]))))
         cv2.circle(img, q(iris[0]), rad, white, 1, cv2.LINE_AA)
         cv2.circle(img, q(iris[0]), 1, red, 2, cv2.LINE_AA)
         mid, eye_w = (p[outer] + p[inner]) / 2, float(np.hypot(*(p[outer] - p[inner])))
-        pw, ph = eye_w * 1.3, eye_w * 0.65      # the patch of pixels the model looks at
-        cv2.rectangle(img, (int(mid[0] - pw / 2), int(mid[1] - ph / 2)), (int(mid[0] + pw / 2), int(mid[1] + ph / 2)),
-                      white, 1, cv2.LINE_AA)
+        box = np.array(eye_box(mid[0], mid[1], eye_w, tilt), np.int32)     # the pixels the model looks at
+        cv2.polylines(img, [box], True, white, 1, cv2.LINE_AA)
     # head direction: how far the nose tip sits from the middle of the face, exaggerated
     centre = (p[EYES[0][0]] + p[EYES[1][0]] + p[MOUTH[0]] + p[MOUTH[1]]) / 4
     tip = centre + (p[NOSE_TIP] - centre) * 4

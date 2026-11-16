@@ -347,3 +347,26 @@ def test_kernel_kept_only_where_it_helps(tmp_path):
     assert again.predict(bent[5].f) == pytest.approx(m.predict(bent[5].f), abs=0.01)
     refit = again.refit()                       # click learning keeps it without refitting it
     assert refit.kernel is again.kernel
+
+
+def test_tilted_head_gives_level_eye_pictures():
+    """Tilting the head 15 degrees barely changes the eye pictures the model reads: they are cut
+    out along the line between the eyes. Cut out straight (as before), they change a lot."""
+    import cv2
+    from gazehop.tracker import eye_patch
+    gray = np.full((480, 640), 150, np.uint8)
+    for cx in (275, 365):                       # two eyes: lids, and an iris looking up-left
+        cv2.ellipse(gray, (cx, 220), (26, 11), 0, 0, 360, 230, -1)
+        cv2.circle(gray, (cx - 8, 216), 8, 30, -1)
+        cv2.line(gray, (cx - 26, 209), (cx + 26, 205), 60, 2)
+    lm = _face()
+    turn = cv2.getRotationMatrix2D((320, 240), 15, 1.0)
+    tilted, lm_t = cv2.warpAffine(gray, turn, (640, 480), borderValue=150), lm @ turn[:, :2].T + turn[:, 2]
+    corr = lambda a, b: float(np.corrcoef(a, b)[0, 1])
+    level = features(lm, np.eye(4), gray)[8:]
+    assert corr(level, features(lm_t, np.eye(4), tilted)[8:]) > 0.95
+    straight = []                               # the old way: no turn
+    for outer, inner in ((33, 133), (263, 362)):
+        mid, w = (lm_t[outer] + lm_t[inner]) / 2, float(np.hypot(*(lm_t[outer] - lm_t[inner])))
+        straight += eye_patch(tilted, mid[0], mid[1], w)
+    assert corr(level, straight) < 0.85

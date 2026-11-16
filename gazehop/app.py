@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import os
 import queue
 import sys
 import threading
@@ -29,6 +30,9 @@ class App:
         self.model_file = config.model_path(profile)
         self.profile = profile
         saved = GazeModel.load(self.model_file, self.screens)
+        if saved is None and os.path.exists(self.model_file):
+            print("gazehop: your saved calibration does not fit (a new gazehop version reads the eyes "
+                  "differently, or the screens changed): please calibrate again.")
         if saved is not None and saved.error is None and saved.calib:
             # saved before the non-linear correction existed: learn it once now from the same samples
             print("gazehop: improving your saved calibration (once, a few seconds)...")
