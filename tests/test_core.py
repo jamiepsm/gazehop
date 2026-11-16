@@ -52,6 +52,7 @@ class FakeBackend:
         self._screens, self.wins, self.active, self.focused = screens, wins, active, []
 
     def screens(self): return self._screens
+    def main_screen(self): return self._screens[-1]
     def windows(self): return self.wins
     def active_window(self): return next((w for w in self.wins if w.id == self.active), None)
     def idle_seconds(self): return None
@@ -281,3 +282,15 @@ def test_update_check(monkeypatch):
         raise OSError("no network")
     monkeypatch.setattr(update.urllib.request, "urlopen", offline)
     assert update.check() is None
+
+
+def test_one_instance(tmp_path, monkeypatch):
+    """A second gazehop of the same user is refused while the first runs, and allowed after."""
+    from gazehop import __main__ as cli, config
+    monkeypatch.setattr(config, "data_dir", lambda: str(tmp_path))
+    first = cli.lock_instance()
+    assert first is not None and cli.lock_instance() is None
+    first.close()                       # the first one quits (or crashes: the OS drops the lock too)
+    again = cli.lock_instance()
+    assert again is not None
+    again.close()

@@ -63,6 +63,11 @@ class App:
     # ---- lifecycle
 
     def run(self) -> int:
+        import signal
+        # a plain kill, or logging out, ends the app the normal way: learned clicks get saved
+        for name in ("SIGTERM", "SIGHUP"):
+            if hasattr(signal, name):
+                signal.signal(getattr(signal, name), lambda *_: self.root.after(0, self.quit))
         self.tracker.start()
         self.activity.start(self.cfg["hotkey"])
         if self._calibrate_first:
@@ -75,8 +80,7 @@ class App:
             print("gazehop: not calibrated yet — press Calibrate in the window.")
         else:
             self._announce()
-        if self.cfg["show_dot"]:
-            self._make_dot()
+        self._sync_dot()
         if self._want_tray:
             from . import tray
             self.tray = tray.start(self)
@@ -110,12 +114,21 @@ class App:
         from .calibration import Calibration
         if self.calibration:
             return
+        main = self.backend.main_screen()
+        self.tracker.preview = True             # the camera picture is shown during calibration too
+        if self._dot:
+            self._dot.hide()                    # it would only pull the eyes away from the dots
         self.calibration = Calibration(self.root, self.screens, self._calibrated,
-                                       base=self.model if self.add_round else None, previous=self.model)
+                                       base=self.model if self.add_round else None, previous=self.model,
+                                       main=self.screens.index(main) if main in self.screens else 0,
+                                       preview=self.tracker.latest_preview)
         self.calibration.start()
 
     def _calibrated(self, model) -> None:
         self.calibration = None
+        self.tracker.preview = bool(self.window and self.window.visible)
+        if self._dot:
+            self._dot.show()
         if model is None:
             self.add_round = False
             print("gazehop: calibration cancelled, discarded, or the camera saw too little of your face.")
@@ -262,8 +275,9 @@ class App:
     def set_options(self, changes: dict) -> None:
         """From the settings window: applies now (the focuser reads this same dict) and saves."""
         self.cfg.update(changes)
-        if changes.get("show_dot", self.dot_visible) != self.dot_visible:
-            self.toggle_dot()
+        self._sync_dot()
+        if "dot_color" in changes and self._dot:
+            self._dot.set_colour(changes["dot_color"])
         config.save(changes)
 
     @property
@@ -271,9 +285,17 @@ class App:
         return self._dot is not None
 
     def toggle_dot(self) -> None:
-        if self._dot is None:
+        """Button, tray and hotkey flip what is really on screen; the setting and the settings
+        window follow, so nothing can show the opposite."""
+        self.set_options({"show_dot": not self.dot_visible})
+        if self.settings:
+            self.settings.reflect("show_dot", self.cfg["show_dot"])
+
+    def _sync_dot(self) -> None:
+        """Makes the screen match the show_dot setting: the one place the dot is made or removed."""
+        if self.cfg["show_dot"] and self._dot is None:
             self._make_dot()
-        else:
+        elif not self.cfg["show_dot"] and self._dot is not None:
             self._dot.destroy()
             self._dot = None
 
@@ -354,7 +376,9 @@ class App:
 
     def _make_dot(self) -> None:
         from .dot import GazeDot
-        self._dot = GazeDot(self.root)
+        self._dot = GazeDot(self.root, self.cfg.get("dot_color"))
+        if self.calibration:
+            self._dot.hide()
 
 
 def _mean(pts):

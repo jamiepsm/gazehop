@@ -34,13 +34,14 @@ class Tray:
             item("Settings…", send("settings")),
             menu.SEPARATOR,
             item("Quit", send("quit"))))
-        self._shown = (False, None)     # (paused, update) the icon and menu were last drawn for
+        self._shown = (False, None, False)  # (paused, update, dot) the icon and menu were last drawn for
         self._thread = threading.Thread(target=self.icon.run, name="gazehop-tray", daemon=True)
         self._thread.start()
 
     def refresh(self) -> None:
         """Called from the main loop: keeps the icon and menu in step with the app."""
-        now = (self.app.paused, self.app.update)
+        # the desktop's tray reads labels and checkmarks only when the menu is redrawn
+        now = (self.app.paused, self.app.update, self.app.dot_visible)
         if now != self._shown:
             self._shown = now
             try:

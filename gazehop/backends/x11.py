@@ -57,6 +57,7 @@ def load_xlib():
     P(x.XGetWindowProperty, c_int, c_void_p, Window, Atom, c_long, c_long, c_int, Atom,
       POINTER(Atom), POINTER(c_int), POINTER(c_ulong), POINTER(c_ulong), POINTER(c_void_p))
     P(x.XFree, c_int, c_void_p)
+    P(x.XGetAtomName, c_void_p, c_void_p, Atom)
     P(x.XGetGeometry, c_int, c_void_p, Window, POINTER(Window), POINTER(c_int), POINTER(c_int),
       POINTER(c_uint), POINTER(c_uint), POINTER(c_uint), POINTER(c_uint))
     P(x.XTranslateCoordinates, c_int, c_void_p, Window, Window, c_int, c_int,
@@ -140,6 +141,28 @@ class X11Backend:
             s = self.x.XDefaultScreen(self.dpy)
             out = [Rect(0, 0, self.x.XDisplayWidth(self.dpy, s), self.x.XDisplayHeight(self.dpy, s))]
         return sorted(set(out))
+
+    def main_screen(self) -> Rect | None:
+        """The built-in screen (a laptop's own panel) if there is one, else the primary screen."""
+        if self.xrr is None:
+            return None
+        n, found = c_int(), {}
+        mons = self.xrr.XRRGetMonitors(self.dpy, self.root, True, byref(n))
+        if not mons:
+            return None
+        for i in range(n.value):
+            m = mons[i]
+            p = self.x.XGetAtomName(self.dpy, m.name)
+            name = ctypes.string_at(p).decode(errors="replace") if p else ""
+            if p:
+                self.x.XFree(p)
+            rect = Rect(m.x, m.y, m.width, m.height)
+            if name.startswith(("eDP", "LVDS", "DSI")):     # how laptops name their own panel
+                found.setdefault("builtin", rect)
+            if m.primary:
+                found.setdefault("primary", rect)
+        self.xrr.XRRFreeMonitors(mons)
+        return found.get("builtin") or found.get("primary")
 
     def _rect(self, win: int) -> Rect | None:
         root, x, y, w, h, bw, depth = Window(), c_int(), c_int(), c_uint(), c_uint(), c_uint(), c_uint()

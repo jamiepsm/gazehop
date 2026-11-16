@@ -70,6 +70,9 @@ class GnomeBackend:
             return self._x11.screens()
         raise BackendError("Cannot read the monitor layout (XWayland / DISPLAY is not available).")
 
+    def main_screen(self) -> Rect | None:
+        return self._x11.main_screen() if self._x11 is not None else None
+
     def _refresh(self):
         now = time.monotonic()
         if now - self._cache[0] < self.CACHE:

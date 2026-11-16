@@ -3,6 +3,7 @@
 Every backend offers:
     name                    short label
     screens()   -> [Rect]   monitors in global pixels
+    main_screen() -> Rect | None    the built-in screen if there is one, else the primary
     windows()   -> [Win]    normal visible windows, topmost first, without gazehop's own
     active_window() -> Win | None
     focus(win_id) -> bool

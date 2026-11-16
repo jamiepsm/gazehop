@@ -42,7 +42,53 @@ def _log_to_file() -> None:
     sys.stdout, sys.stderr = _Tee(log, sys.stdout), _Tee(log, sys.stderr)
 
 
+def lock_instance():
+    """A lock held for as long as this process lives (the OS drops it even after a crash), or None
+    if another gazehop of this user already holds it: two would fight over the camera and focus."""
+    import os
+    os.makedirs(config.data_dir(), exist_ok=True)
+    fh = open(os.path.join(config.data_dir(), "gazehop.lock"), "a+")
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+            fh.seek(0)
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        fh.close()
+        return None
+    return fh
+
+
+ALREADY = "gazehop is already running. Open it from its tray icon, or quit it there first."
+
+
+def _detach(argv) -> int:
+    """Starts this same command again, cut loose from the terminal, and returns: closing the
+    terminal then leaves gazehop running. Its messages go to gazehop.log."""
+    import os
+    import subprocess
+    cmd = [sys.executable, "-m", "gazehop", *argv]
+    kw = {}
+    if sys.platform == "win32":
+        quiet = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")     # no console window
+        if os.path.exists(quiet):
+            cmd[0] = quiet
+        kw["creationflags"] = 0x08 | 0x200      # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    else:
+        kw["start_new_session"] = True          # no hang-up signal when the terminal closes
+    subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kw)
+    print("gazehop: running in the background; quit it from its window or tray icon.\n"
+          f"gazehop: messages go to {os.path.join(config.data_dir(), 'gazehop.log')}")
+    return 0
+
+
 def cmd_run(args, calibrate_only=False) -> int:
+    lock = lock_instance()      # held until exit
+    if lock is None:
+        sys.exit(f"gazehop: {ALREADY}")
     cfg = config.load()
     if args.camera is not None:
         cfg["camera"] = args.camera
@@ -122,9 +168,20 @@ def main(argv=None) -> int:
     p.add_argument("--window", action="store_true",
                    help="open the app window (camera view, buttons) and a tray icon")
     p.add_argument("--no-tray", action="store_true", help="with --window: no tray icon")
+    p.add_argument("--foreground", action="store_true",
+                   help="with --window: stay attached to the terminal (Ctrl+C quits) instead of running in the background")
     p.add_argument("--profile", metavar="NAME",
                    help="use a separate named calibration, e.g. --profile glasses")
     args = p.parse_args(argv)
+    # the app (with its window) outlives the terminal it was started from; terminal-only mode
+    # does not, because Ctrl+C is the only way to quit it
+    if args.window and not args.foreground and args.command in ("run", "calibrate") \
+            and sys.stdout is not None and sys.stdout.isatty():
+        lock = lock_instance()  # checked here so the message lands in this terminal; the copy takes it
+        if lock is None:
+            sys.exit(f"gazehop: {ALREADY}")
+        lock.close()
+        return _detach(sys.argv[1:] if argv is None else argv)
     if sys.stdout is None or sys.stderr is None or args.window:
         _log_to_file()
     if args.command == "cameras":

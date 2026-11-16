@@ -43,6 +43,7 @@ PAGES = [
     ]),
     ("Extras", [
         ("show_dot", "Gaze dot", "Show where gazehop thinks you are looking.", "switch"),
+        ("dot_color", "Gaze dot colour", "Pick one, or choose your own.", "colour"),
         ("move_pointer", "Move the pointer", "Also put the mouse pointer on the window that gets focus.",
          "switch"),
         ("hotkey", "Pause shortcut", "For example <ctrl>+<alt>+g. " + RESTART, "hotkey"),
@@ -150,6 +151,41 @@ class Slider(tk.Canvas):
         self.on_commit(self.value)
 
 
+SWATCHES = ("#d0d0d6", "#ffffff", "#48d696", "#5aa9ff", "#b48cff", "#ffb057", "#ff7ab6")
+
+
+class Swatches(tk.Canvas):
+    """A row of colours to pick from; click one, or move with the arrow keys. A colour that is not
+    in the row (chosen with "Custom…") shows as an extra swatch at the end."""
+    STEP = 30
+
+    def __init__(self, parent, value, on_change):
+        super().__init__(parent, height=28, bg=CARD, highlightthickness=0, bd=0, cursor="hand2", takefocus=1)
+        self.on_change = on_change
+        self.bind("<Button-1>", lambda e: self._pick(int(e.x // self.STEP)))
+        self.bind("<Left>", lambda _e: self._pick(self._colours.index(self.value) - 1))
+        self.bind("<Right>", lambda _e: self._pick(self._colours.index(self.value) + 1))
+        self.bind("<FocusIn>", lambda _e: self.itemconfigure("ring", outline=ACCENT))
+        self.bind("<FocusOut>", lambda _e: self.itemconfigure("ring", outline=FG))
+        self.set(value)
+
+    def set(self, value) -> None:
+        """Shows `value` without reporting a change."""
+        self.value = value
+        self._colours = list(SWATCHES) + ([value] if value not in SWATCHES else [])
+        self.configure(width=self.STEP * len(self._colours))
+        self.delete("all")
+        for k, c in enumerate(self._colours):
+            self.create_image(k * self.STEP + 6, 6, anchor="nw", image=disc(16, c, CARD))
+        k = self._colours.index(value)
+        self.create_oval(k * self.STEP + 2, 2, k * self.STEP + 25, 25, outline=FG, width=2, tags="ring")
+
+    def _pick(self, k: int) -> None:
+        if 0 <= k < len(self._colours) and self._colours[k] != self.value:
+            self.set(self._colours[k])
+            self.on_change(self.value)
+
+
 class SettingsWindow:
     def __init__(self, app):
         self.app = app
@@ -216,6 +252,21 @@ class SettingsWindow:
             self.set_cameras(self._cameras)
         elif control == "hotkey":
             self._hotkey_row(row, note)
+        elif control == "colour":
+            box = tk.Frame(row, bg=CARD)
+            box.pack(side="right")
+            swatches = Swatches(box, value, lambda v: self._set(key, v))
+
+            def custom() -> None:
+                from tkinter import colorchooser
+                picked = colorchooser.askcolor(swatches.value, parent=self.win, title="Gaze dot colour")[1]
+                if picked:
+                    swatches.set(picked.lower())
+                    self._set(key, picked.lower())
+
+            button(box, "Custom…", custom, on=CARD).pack(side="right", padx=(8, 0))
+            swatches.pack(side="right")
+            self._show[key] = swatches.set
         else:
             lo, hi, step, unit = control
             shown = tk.Label(row, bg=CARD, fg=FG, font=font(10), width=8, anchor="e")
@@ -289,6 +340,11 @@ class SettingsWindow:
 
     def _set(self, key, value) -> None:
         self.app.set_options({key: value})
+
+    def reflect(self, key, value) -> None:
+        """Shows a value changed somewhere else (the app window, the tray)."""
+        if key in self._show:
+            self._show[key](value)
 
     def select(self, k: int) -> None:
         for j, (tab, line, page) in enumerate(self._tabs):

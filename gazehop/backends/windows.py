@@ -84,6 +84,11 @@ class WindowsBackend:
         user32.EnumDisplayMonitors(None, None, cb, 0)
         return sorted(out)
 
+    def main_screen(self) -> Rect | None:
+        """The primary screen: Windows always puts it at (0, 0)."""
+        # ponytail: built-in panel detection needs QueryDisplayConfig; add it if laptop users ask
+        return next((r for r in self.screens() if (r.x, r.y) == (0, 0)), None)
+
     def _win(self, hwnd) -> Win | None:
         if not hwnd or not user32.IsWindowVisible(hwnd) or user32.IsIconic(hwnd):
             return None

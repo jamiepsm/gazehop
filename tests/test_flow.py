@@ -33,6 +33,9 @@ class FakeTk:
     def configure(self, **k):
         self.options.update(k)
 
+    def subsample(self, *a):
+        return self
+
     def __getattr__(self, name):
         if name.startswith("__"):
             raise AttributeError(name)
@@ -60,6 +63,7 @@ def faketk(monkeypatch):
     monkeypatch.setitem(sys.modules, "tkinter", mod)
     monkeypatch.delitem(sys.modules, "gazehop.calibration", raising=False)
     monkeypatch.delitem(sys.modules, "gazehop.app", raising=False)
+    monkeypatch.setattr("gazehop.dot._x11", ())     # no real X windows from a test: the Tk dot, faked
     return mod
 
 
@@ -272,11 +276,11 @@ def test_tray_menu_queues_events(faketk, monkeypatch):
 
     class Icon:
         def __init__(self, name, image, title, menu):
-            made.update(menu=menu, icon=self)
+            made.update(menu=menu, icon=self, redraws=0)
             self.icon, self.title = image, title
         def run(self): pass
         def stop(self): made["stopped"] = True
-        def update_menu(self): pass
+        def update_menu(self): made["redraws"] += 1
 
     class Item:
         def __init__(self, text, action, **k): self.text, self.action, self.k = text, action, k
@@ -309,6 +313,12 @@ def test_tray_menu_queues_events(faketk, monkeypatch):
     app.paused = True
     t.refresh()
     assert pause.text(pause) == "Resume" and made["icon"].title == "gazehop (paused)"
+    before = made["redraws"]
+    app.dot_visible = True              # turned on from the app window: the tray's checkmark must follow
+    t.refresh()
+    assert made["redraws"] == before + 1
+    t.refresh()
+    assert made["redraws"] == before + 1    # and only when something changed
     t.stop()
     assert made["stopped"]
 
@@ -387,3 +397,72 @@ def test_dot_shape():
     assert 0.75 * area(rest) < area(moving) <= area(rest) * 1.01       # the tail takes a little off
     up = blob((0.0, -1.0), 0.5)
     assert max(p[1] for p in up) - min(p[1] for p in up) > 2 * RADIUS   # stretched along the direction
+
+
+    import numpy as np
+    from gazehop.dot import DEFAULT_COLOUR, SIZE, colour_or_default, droplet
+    assert colour_or_default("#FF00aa") == "#FF00aa"
+    assert colour_or_default("red") == colour_or_default(None) == DEFAULT_COLOUR     # hand-edited config
+    px = np.frombuffer(droplet((1.0, 0.0), 0.0, "#ff0000"), np.uint8).reshape(SIZE, SIZE, 4)
+    assert px[SIZE // 2, SIZE // 2, 3] == 0                         # a ring: the middle is see-through
+    ring = px[px[..., 3] > 200]
+    assert len(ring) and (ring[:, 2] > 3 * ring[:, 1]).all()         # BGRA: red, in the chosen colour
+
+
+def test_calibration_preview_and_escape(faketk):
+    """The camera picture shows on the main screen without covering a dot; Esc works from any
+    gazehop window, and stops working once calibration is over."""
+    import numpy as np
+    from gazehop.calibration import Calibration
+    from gazehop.calibration_plan import plan, preview_spot
+    root, result = FakeTk(), []
+    second = Rect(1600, 0, 1920, 1080)
+    picture = np.zeros((270, 480, 3), np.uint8)
+    cal = Calibration(root, [SCREEN, second], result.append, main=1, preview=lambda: picture)
+    cal.start()
+    cal.add(face((400, 400), (400, 400), random.Random(1)))
+    images = [c for c in cal.canvases[1].calls if c[0] == "create_image"]
+    assert images and not [c for c in cal.canvases[0].calls if c[0] == "create_image"]
+    x, y = images[0][1]
+    for (px, py), _kind in plan([SCREEN, second])[1]:       # no dot under the picture
+        assert not (x - 14 < px - second.x < x + 240 + 14 and y - 14 < py - second.y < y + 135 + 14)
+    assert any(c[0] == "bind_all" and c[1][0] == "<Escape>" for c in root.calls)
+    escape = next(c[1][1] for c in root.calls if c[0] == "bind_all")
+    escape(None)
+    assert result == [None] and any(c[0] == "unbind_all" for c in root.calls)
+
+
+def test_preview_spot():
+    from gazehop.calibration_plan import plan, preview_spot
+    r = Rect(0, 0, 1920, 1080)
+    above = Rect(0, -1440, 2560, 1440)      # a screen above: dots along the shared top edge
+    for screens in ([r], [r, above]):
+        points = [p for p, _kind in plan(screens)[0]]
+        x, y = preview_spot(r, points, 240, 135)
+        assert y < 300, "near the top when there is room"
+        assert all(not (x - 44 < px < x + 240 + 44 and y - 44 < py < y + 135 + 44) for px, py in points)
+    assert preview_spot(Rect(0, 0, 300, 200), [(150, 100)], 240, 135) is None     # no room: no picture
+
+
+def test_dot_toggle_has_one_truth(faketk, monkeypatch, tmp_path):
+    """However the dot is switched (button, tray, settings), what is on screen, the setting, the
+    saved file and an open settings window agree."""
+    import json
+    from gazehop import config
+    monkeypatch.setattr(config, "data_dir", lambda: str(tmp_path))
+    import gazehop.app as appmod
+
+    class Mini:         # just the dot part of the app, with the real methods
+        dot_visible, toggle_dot, _sync_dot = appmod.App.dot_visible, appmod.App.toggle_dot, appmod.App._sync_dot
+        set_options, _make_dot = appmod.App.set_options, appmod.App._make_dot
+
+    app, shown = Mini(), []
+    app.cfg, app.root, app._dot, app.calibration = {"show_dot": False, "dot_color": "#d0d0d6"}, FakeTk(), None, None
+    app.settings = types.SimpleNamespace(reflect=lambda k, v: shown.append((k, v)))
+    saved = lambda: json.loads((tmp_path / "config.json").read_text())["show_dot"]
+    for expected in (True, False, True):
+        app.toggle_dot()
+        assert app.dot_visible is expected and app.cfg["show_dot"] is expected and saved() is expected
+        assert shown[-1] == ("show_dot", expected)
+    app.set_options({"show_dot": False})        # the settings switch takes the same path
+    assert not app.dot_visible and saved() is False

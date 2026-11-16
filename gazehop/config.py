@@ -19,6 +19,7 @@ DEFAULTS = {
     "screen_from_gaze": False,    # True: eyes alone pick the screen; False: your head direction does
     "move_pointer": False,    # also move the mouse pointer to the newly focused window
     "show_dot": False,        # draw where gazehop thinks you are looking
+    "dot_color": "#d0d0d6",   # the gaze dot's colour, #rrggbb
     "hotkey": "<ctrl>+<alt>+g",   # pause / resume
     "check_updates": True,    # ask GitHub once per start whether a newer version is out
     "config_version": 2,

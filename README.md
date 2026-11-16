@@ -65,7 +65,10 @@ Which session you are in matters (`echo $XDG_SESSION_TYPE`):
 ## The app
 
 Start **gazehop** from the applications menu (Linux) or the Desktop / Start menu icon (Windows).
-From a terminal it is `./run.sh --window` (`run.bat --window`).
+From a terminal it is `./run.sh --window` (`run.bat --window`): it starts in the background, so
+you can close the terminal. Quit it from its window or tray icon. Add `--foreground` to keep it
+attached to the terminal instead. Only one gazehop runs at a time; starting it again while it
+runs just says so.
 
 - **Camera view** — the live picture, mirrored, with what gazehop reads drawn on it: a green
   outline around the face and eyes, white circles on the irises, white boxes around the eye pixels
@@ -73,8 +76,10 @@ From a terminal it is `./run.sh --window` (`run.bat --window`).
   disappears, gazehop has nothing to work with: fix the light or the camera first.
 - **Status line** — tracking, paused, looking at the keyboard, looking away, no readable face.
 - **Buttons** — Pause, Calibrate (start over), Add round, Gaze dot, Settings, Quit.
-- **Gaze dot** — a small see-through green drop that floats where gazehop thinks you are looking.
-  It stretches as it moves and settles when your eyes rest. Clicks go straight through it.
+- **Gaze dot** — a thin see-through ring that floats where gazehop thinks you are looking. It
+  trails into a teardrop as it moves and rounds off when your eyes rest. Clicks go straight
+  through it, and it hides during calibration. Light grey by default; pick another colour in
+  Settings.
 - **Tray icon** — the same actions in a menu; closing the window keeps gazehop running in the
   tray. Without tray support (see the installer's notes) closing the window quits.
 
@@ -101,8 +106,9 @@ Set `screen_from_gaze` to true if you would rather not turn your head — it is 
 
 Takes about 45 seconds per screen: follow the red dot with your eyes only, point your nose at the
 blue dot, keep looking at the green dot while moving your head, then look at your keyboard once.
-Space (or a click) starts each part; Esc cancels. Sit the way you normally do, with your face
-evenly lit.
+Space (or a click) starts each part; Esc or the **Cancel** button in the top-right corner of any
+screen stops it. Your camera picture shows at the top of your laptop's own screen (or your main
+screen), so you can check you are in view. Sit the way you normally do, with your face evenly lit.
 
 While the dots run, a **grey ring** shows live where your previous calibration thinks you are
 looking. At the end comes a **review screen**: a **green ring** follows your eyes using the new
@@ -148,6 +154,7 @@ Linux) if you prefer to edit them by hand; restart afterwards.
 | `screen_from_gaze` | false | true: your eyes alone pick the screen; false: your head direction does |
 | `move_pointer` | false | Also move the mouse pointer to the focused window |
 | `show_dot` | false | Always draw the gaze dot |
+| `dot_color` | `#d0d0d6` | The gaze dot's colour (light grey) |
 | `hotkey` | `<ctrl>+<alt>+g` | Pause/resume |
 | `check_updates` | true | Check once per start whether a newer version is out |
 

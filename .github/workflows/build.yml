@@ -71,10 +71,26 @@ jobs:
           path: |
             ${{ matrix.name }}.zip
             ${{ matrix.name }}.tar.gz
-      - uses: softprops/action-gh-release@v3
-        if: startsWith(github.ref, 'refs/tags/v')
+
+  release:
+    # one job publishes, after both bundles exist: two jobs editing one release doubled its notes
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: bundle
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Release notes from the tag message
+        # checkout leaves an annotated tag looking like a plain one; fetch the real tag first
+        run: |
+          git fetch --force origin "refs/tags/${{ github.ref_name }}:refs/tags/${{ github.ref_name }}"
+          git tag -l --format='%(contents)' "${{ github.ref_name }}" > notes.md
+          cat notes.md
+      - uses: actions/download-artifact@v7
         with:
-          generate_release_notes: true      # "what's new", written from the commits since the last tag
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v3
+        with:
+          body_path: notes.md
           files: |
-            ${{ matrix.name }}.zip
-            ${{ matrix.name }}.tar.gz
+            gazehop-windows.zip
+            gazehop-linux.tar.gz

@@ -22,6 +22,19 @@ def edge_points(r: Rect, o: Rect) -> list:
     return pts
 
 
+def preview_spot(r: Rect, points, w: float, h: float, clear: float = 44):
+    """Top-left corner (relative to `r`) for a w x h camera preview on screen `r` that keeps
+    `clear` pixels away from every calibration dot in `points` (global pixels). Near the top first,
+    under the hint line; None if no spot is free."""
+    spots = [(r.w / 2 - w / 2, 120), (r.w / 2 - w / 2, r.h - h - 60),
+             (60, r.h / 2 - h / 2), (r.w - w - 60, r.h / 2 - h / 2)]
+    for x, y in spots:
+        if all(not (x - clear < px - r.x < x + w + clear and y - clear < py - r.y < y + h + clear)
+               for px, py in points):
+            return x, y
+    return None
+
+
 def plan(screens) -> list:
     """Per screen, the list of (point, kind) steps in global pixels."""
     blocks = []
