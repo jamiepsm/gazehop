@@ -1,0 +1,3 @@
+# Windows collaborators: keep shell scripts LF (bash breaks on CRLF) and batch files CRLF (cmd labels break on LF)
+*.sh  text eol=lf
+*.bat text eol=crlf

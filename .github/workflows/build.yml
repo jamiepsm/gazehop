@@ -1,0 +1,75 @@
+# Tests on every push; on a version tag (v0.2.0, ...) also builds standalone app bundles for
+# Windows and Linux and attaches them to a GitHub Release.
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y xvfb libxss1 libxrandr2
+      - run: pip install -r requirements.txt pytest
+      - run: python -m pytest -q tests
+
+  bundle:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: gazehop-windows
+          - os: ubuntu-22.04      # an older Linux, so the bundle also runs on newer ones
+            name: gazehop-linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pyinstaller
+      - name: Build
+        run: >
+          pyinstaller --noconfirm --windowed --name gazehop
+          --icon gazehop/assets/icon.ico
+          --add-data "gazehop/assets:gazehop/assets"
+          --collect-all mediapipe
+          --hidden-import pynput.keyboard._win32 --hidden-import pynput.mouse._win32
+          --hidden-import pynput.keyboard._xorg --hidden-import pynput.mouse._xorg
+          --hidden-import pystray._win32 --hidden-import pystray._xorg --hidden-import pystray._appindicator
+          launcher.py
+      - name: Smoke test the bundle
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then dist/gazehop/gazehop.exe selftest; else dist/gazehop/gazehop selftest; fi
+      - name: Zip
+        shell: bash
+        run: |
+          cp README.md LICENSE dist/gazehop/
+          cd dist
+          if [ "$RUNNER_OS" = "Windows" ]; then 7z a ../${{ matrix.name }}.zip gazehop; else tar czf ../${{ matrix.name }}.tar.gz gazehop; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            ${{ matrix.name }}.zip
+            ${{ matrix.name }}.tar.gz
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: |
+            ${{ matrix.name }}.zip
+            ${{ matrix.name }}.tar.gz

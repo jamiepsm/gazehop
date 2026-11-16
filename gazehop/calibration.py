@@ -1,0 +1,237 @@
+"""Calibration overlay (Tk). Per screen, three short phases, as in Eyeshift:
+red = eyes only over a 4x4 grid (+ shared screen edges); blue = point your nose at the dot (teaches
+the head model); green = keep looking at the dot while moving your head (teaches the gaze model to
+cancel head movement). Then one look at the keyboard. Esc cancels.
+
+Live rings show where a calibration thinks you are looking: grey for the previous calibration (while
+the dots run), and at the end a review step with the new one in green next to the previous one,
+where you keep or discard the result.
+"""
+from __future__ import annotations
+
+import sys
+import time
+import tkinter as tk
+
+from .calibration_plan import EYES, MOVE, NOSE, plan
+from .model import GazeModel, OneEuro, Sample
+
+PREVIOUS, NEW = "#9a9aa0", "#30d158"
+
+PHASE = {   # kind: (settle s, collect s, colour, hint)
+    EYES: (0.6, 1.0, "#ff453a", "Head still — follow the red dot with your eyes"),
+    NOSE: (1.0, 1.0, "#0a84ff", "Point your nose at the blue dot"),
+    MOVE: (0.5, 4.0, "#30d158", "Eyes on the green dot — slowly move your head around"),
+}
+
+
+
+class Calibration:
+    def __init__(self, root: tk.Misc, screens, on_done, base=None, previous=None):
+        """`on_done(model | None)`: None if cancelled, discarded, or too little was seen.
+        `base`: an existing model whose calibration this round is added to instead of replacing it.
+        `previous`: the calibration in use until now, shown as a grey live ring for comparison."""
+        self.root, self.screens, self.on_done, self.base = root, list(screens), on_done, base
+        self.previous = previous or base
+        self.review = None              # the freshly fitted model, while the user checks it
+        self._filters = {PREVIOUS: OneEuro(), NEW: OneEuro()}
+        self.blocks = plan(self.screens)
+        self.samples: list = []
+        self.keyboard: list = []
+        self.b = self.i = 0
+        self.target = None              # (point, kind, screen centre) while sampling
+        self.collecting_keyboard = False
+        self.waiting = True             # for Space
+        self.keyboard_step = False
+        self.done = False
+        self.wins, self.canvases = [], []
+        for r in self.screens:
+            w = tk.Toplevel(root)
+            w.configure(bg="black", cursor="none")
+            w.geometry(f"{int(r.w)}x{int(r.h)}+{int(r.x)}+{int(r.y)}")
+            if sys.platform == "win32":
+                w.overrideredirect(True)
+            else:
+                # X11 window managers refuse keyboard focus to override-redirect windows;
+                # asking for fullscreen on the monitor the window sits on works everywhere
+                w.update_idletasks()
+                w.attributes("-fullscreen", True)
+            w.attributes("-topmost", True)
+            c = tk.Canvas(w, bg="black", highlightthickness=0)
+            c.pack(fill="both", expand=True)
+            for seq, fn in (("<space>", self._space), ("<Return>", self._space), ("<Button-1>", self._space),
+                            ("<Escape>", self._cancel)):
+                w.bind(seq, fn)
+            self.wins.append(w)
+            self.canvases.append(c)
+        self.wins[0].focus_force()
+
+    def start(self) -> None:
+        self._prompt(None)
+
+    def add(self, f) -> None:
+        """Feed every face reading here while calibration runs."""
+        self._live(f)
+        if self.target:
+            p, kind, centre = self.target
+            # the head model learns where the head points: the screen centre while only the eyes move,
+            # the dot itself when the nose points at it, and nothing while the head is wandering
+            head = centre if kind == EYES else p if kind == NOSE else None
+            self.samples.append(Sample(list(f), p[0], p[1], head[0] if head else None, head[1] if head else None))
+        if self.collecting_keyboard:
+            self.keyboard.append(Sample(list(f), 0, 0))
+
+    def _live(self, f) -> None:
+        """Moves the live rings: where the previous / the new calibration puts your gaze right now."""
+        if self.done:
+            return
+        now, rings = time.monotonic(), []
+        for colour, model in ((PREVIOUS, self.previous), (NEW, self.review)):
+            if model is not None:
+                rings.append((colour, self._filters[colour].filter(model.predict(f), now)))
+        for c, r in zip(self.canvases, self.screens):
+            c.delete("live")
+            for colour, p in rings:
+                if r.contains(p):
+                    x, y, rad = p[0] - r.x, p[1] - r.y, 22 if colour == NEW else 16
+                    c.create_oval(x - rad, y - rad, x + rad, y + rad, outline=colour, width=4, tags="live")
+
+    # ---- drawing
+
+    def _draw(self, k: int, message=None, hint=None, dot=None, colour="#ff453a") -> None:
+        c, r = self.canvases[k], self.screens[k]
+        c.delete("all")
+        size = max(14, int(r.h / 45))
+        if message:
+            c.create_text(r.w / 2, r.h / 2, text=message, fill="white", font=("Helvetica", size),
+                          justify="center", width=r.w - 80)
+        if hint:
+            c.create_text(r.w / 2, 50, text=hint, fill="#bbbbbb", font=("Helvetica", size))
+        if dot:
+            x, y = dot[0] - r.x, dot[1] - r.y
+            c.create_oval(x - 14, y - 14, x + 14, y + 14, fill=colour, outline="")
+            c.create_oval(x - 3, y - 3, x + 3, y + 3, fill="white", outline="")
+
+    def _prompt(self, done_name) -> None:
+        for k in range(len(self.screens)):
+            if k == self.b:
+                done = f"✓ Screen {done_name} calibrated.\n\n" if done_name else ""
+                self._draw(k, done + f"Press Space (or click) to calibrate screen {k + 1} — about 45 seconds.\n\n"
+                           "● Red dot: face the middle of the screen, follow it with your eyes only.\n"
+                           "● Blue dot: point your nose at it.\n"
+                           "● Green dot: keep your eyes on it and slowly move your head around —\n"
+                           "left, right, up, down, closer and farther.\n\n"
+                           + ("The grey ring shows where your previous calibration thinks you are looking.\n\n"
+                              if self.previous else "") + "Esc cancels.")
+            else:
+                self._draw(k, "Look at the other screen.")
+        self.wins[self.b].focus_force()
+        self.waiting = True
+
+    # ---- flow
+
+    def _space(self, _e=None) -> None:
+        if not self.waiting or self.done:
+            return
+        self.waiting = False
+        if self.review is not None:
+            self._finish(self.review)
+        elif self.keyboard_step:
+            self._record_keyboard()
+        else:
+            self._next()
+
+    def _next(self) -> None:
+        if self.done:
+            return
+        steps = self.blocks[self.b]
+        if self.i >= len(steps):
+            name = self.b + 1
+            self.b, self.i = self.b + 1, 0
+            if self.b < len(self.blocks):
+                self._prompt(name)
+            else:
+                self._keyboard_prompt(name)
+            return
+        p, kind = steps[self.i]
+        settle, collect, colour, hint = PHASE[kind]
+        # a new phase gets a moment for the instruction to sink in
+        lead = 1.5 if self.i > 0 and steps[self.i - 1][1] != kind else 0.0
+        for k in range(len(self.screens)):
+            if k == self.b:
+                self._draw(k, hint=hint, dot=p, colour=colour)
+            else:
+                self._draw(k)
+        centre = self.screens[self.b].mid
+        # let the eyes (or head) land, then sample
+        self.root.after(int((lead + settle) * 1000), lambda: self._set_target((p, kind, centre)))
+        self.root.after(int((lead + settle + collect) * 1000), self._step_done)
+
+    def _set_target(self, t) -> None:
+        if not self.done:
+            self.target = t
+
+    def _step_done(self) -> None:
+        self.target = None
+        self.i += 1
+        self._next()
+
+    def _keyboard_prompt(self, done_name) -> None:
+        """Last step: learn what "looking at the keyboard" looks like, so typing heads-down never moves focus."""
+        lowest = max(range(len(self.screens)), key=lambda k: self.screens[k].bottom)
+        for k in range(len(self.screens)):
+            self._draw(k, f"✓ Screen {done_name} calibrated.\n\nLast step: look down at your keyboard the way "
+                       "you do while typing,\nand press Space. Keep looking at it for 3 seconds."
+                       if k == lowest else None)
+        self.wins[lowest].focus_force()
+        self.keyboard_step = True
+        self.waiting = True
+
+    def _record_keyboard(self) -> None:
+        for k in range(len(self.screens)):
+            self._draw(k, "Keep looking at your keyboard…")
+        self.root.after(600, lambda: setattr(self, "collecting_keyboard", not self.done))
+        self.root.after(2800, self._fit)
+
+    def _fit(self) -> None:
+        if self.done:
+            return
+        self.collecting_keyboard = False
+        b = self.base
+        if b is not None:
+            model = GazeModel.fit(b.calib + self.samples, self.screens, learned=b.learned,
+                                  keyboard=b.keyboard + self.keyboard)
+        else:
+            model = GazeModel.fit(self.samples, self.screens, keyboard=self.keyboard)
+        if model is None:
+            self._finish(None)
+        else:
+            self._review(model)
+
+    def _review(self, model) -> None:
+        """Last screen: both calibrations follow your eyes live, so you can judge before keeping."""
+        self.review = model
+        new, old = model.typical_error(), self.previous.typical_error() if self.previous else None
+        lines = ["Done — now check it.", "", "Look at a few things on your screen" + ("s." if len(self.screens) > 1 else "."),
+                 "The green ring is where the new calibration thinks you are looking."]
+        if self.previous:
+            lines.append("The grey ring is the previous calibration.")
+        if new is not None:
+            lines += ["", f"Typical error: about {new:.0f} px" + (f"   (previous: {old:.0f} px)" if old is not None else "")]
+        lines += ["", "Space (or click) = keep it      Esc = discard"
+                  + (" and keep the previous one" if self.previous else "")]
+        for k in range(len(self.screens)):
+            self._draw(k, "\n".join(lines) if k == 0 else None)
+        self.wins[0].focus_force()
+        self.keyboard_step = False
+        self.waiting = True
+
+    def _cancel(self, _e=None) -> None:
+        if not self.done:
+            self._finish(None)
+
+    def _finish(self, model) -> None:
+        self.done, self.target, self.collecting_keyboard = True, None, False
+        for w in self.wins:
+            w.destroy()
+        self.on_done(model)
