@@ -252,9 +252,10 @@ class SettingsWindow:
         elif control == "hotkey":
             self._hotkey_row(row, note)
         elif control == "colour":
+            from .dot import colour_or_default      # config.json is edited by hand: "red" must not crash
             box = tk.Frame(row, bg=CARD)
             box.pack(side="right")
-            swatches = Swatches(box, value, lambda v: self._set(key, v))
+            swatches = Swatches(box, colour_or_default(value), lambda v: self._set(key, v))
 
             def custom() -> None:
                 from tkinter import colorchooser

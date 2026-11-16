@@ -354,6 +354,7 @@ def test_settings_window(faketk, monkeypatch, tmp_path):
 
     cfg = config.load()
     cfg["camera"] = 4               # as if started with --camera 4: must not be saved by accident
+    cfg["dot_color"] = "red"        # hand-edited into config.json: the window must still open
     app = types.SimpleNamespace(cfg=cfg, root=FakeTk(), events=queue.Queue(), settings=None,
                                 tracker=types.SimpleNamespace(camera=4, error=None),
                                 activity=types.SimpleNamespace(hooks=True))
