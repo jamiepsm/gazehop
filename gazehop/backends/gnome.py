@@ -1,8 +1,10 @@
 """GNOME on Wayland backend (EXPERIMENTAL).
 
 Wayland gives ordinary apps no way to list or focus other apps' windows, so this talks to
-GNOME Shell through the "Window Calls" extension (window-calls@domandoman.xyz) over D-Bus,
-using the `gdbus` tool that ships with GNOME. Monitors come from XWayland's XRandR.
+GNOME Shell through the "Window Calls" extension (window-calls@domandoman.xyz) over D-Bus:
+in-process through PyGObject when it is there (well under a millisecond per call), else with the
+`gdbus` tool that ships with GNOME (a process per call, 7 ms or more, blocking the main loop; the
+packaged app has no PyGObject). Monitors come from XWayland's XRandR.
 """
 from __future__ import annotations
 
@@ -16,8 +18,8 @@ import time
 from ..geometry import Rect, Win
 from . import BackendError
 
-DEST = ["--session", "--dest", "org.gnome.Shell", "--object-path", "/org/gnome/Shell/Extensions/Windows", "--method"]
-IFACE = "org.gnome.Shell.Extensions.Windows."
+SHELL, PATH, IFACE = "org.gnome.Shell", "/org/gnome/Shell/Extensions/Windows", "org.gnome.Shell.Extensions.Windows"
+IDLE = ("org.gnome.Mutter.IdleMonitor", "/org/gnome/Mutter/IdleMonitor/Core", "org.gnome.Mutter.IdleMonitor")
 INSTALL_HINT = (
     "On GNOME Wayland gazehop needs the 'Window Calls' GNOME Shell extension:\n"
     "  https://extensions.gnome.org/extension/4724/window-calls/\n"
@@ -33,12 +35,22 @@ def parse_gvariant_string(out: str) -> str:
     return re.sub(r"\\(.)", lambda e: {"n": "\n", "t": "\t"}.get(e.group(1), e.group(1)), m.group(2))
 
 
+def session_bus():
+    """The session D-Bus through PyGObject, or None without it."""
+    try:
+        from gi.repository import Gio
+        return Gio.bus_get_sync(Gio.BusType.SESSION, None)
+    except Exception:
+        return None
+
+
 class GnomeBackend:
     name = "gnome-wayland"
-    CACHE = 0.25    # seconds; every query is a gdbus subprocess, so don't ask on every camera frame
+    CACHE = 0.25    # seconds; don't ask the shell on every camera frame
 
     def __init__(self):
-        if not shutil.which("gdbus"):
+        self._bus = session_bus()
+        if self._bus is None and not shutil.which("gdbus"):
             raise BackendError("gdbus not found (sudo apt install libglib2.0-bin).")
         self._pid = os.getpid()
         self._cache = (0.0, [], None)
@@ -56,14 +68,28 @@ class GnomeBackend:
             except Exception:
                 self._x11 = None
 
-    def _gdbus(self, args, timeout=2.0) -> str:
-        r = subprocess.run(["gdbus", "call", *args], capture_output=True, text=True, timeout=timeout)
+    def _dbus(self, dest, path, iface, method, args=(), timeout=2.0) -> tuple:
+        """Calls a D-Bus method whose arguments are all uint32 (window ids); returns its results."""
+        if self._bus is not None:
+            from gi.repository import Gio, GLib
+            params = GLib.Variant("(" + "u" * len(args) + ")", tuple(int(a) for a in args)) if args else None
+            return self._bus.call_sync(dest, path, iface, method, params, None, Gio.DBusCallFlags.NONE,
+                                       int(timeout * 1000), None).unpack()
+        r = subprocess.run(["gdbus", "call", "--session", "--dest", dest, "--object-path", path,
+                            "--method", f"{iface}.{method}", *map(str, args)],
+                           capture_output=True, text=True, timeout=timeout)
         if r.returncode != 0:
             raise RuntimeError(r.stderr.strip() or "gdbus failed")
-        return r.stdout
+        out = r.stdout.strip()
+        if out == "()":
+            return ()
+        m = re.fullmatch(r"\(\s*(?:uint64\s+)?(\d+)\s*,?\s*\)", out)     # a number, e.g. the idle time
+        return (int(m.group(1)),) if m else (parse_gvariant_string(out),)
 
     def _call(self, method: str, *args) -> str:
-        return self._gdbus([*DEST, IFACE + method, *map(str, args)])
+        """A Window Calls method; returns its string result (JSON), or "" if it has none."""
+        out = self._dbus(SHELL, PATH, IFACE, method, args)
+        return out[0] if out else ""
 
     def screens(self) -> list:
         if self._x11 is not None:
@@ -78,7 +104,7 @@ class GnomeBackend:
         if now - self._cache[0] < self.CACHE:
             return
         try:
-            raw = json.loads(parse_gvariant_string(self._call("List")))
+            raw = json.loads(self._call("List"))
         except Exception:
             self._cache = (now, [], None)
             return
@@ -108,10 +134,10 @@ class GnomeBackend:
         if hit and time.monotonic() - hit[0] < 1.0:
             return hit[1]
         try:
-            f = json.loads(parse_gvariant_string(self._call("Details", wid)))
+            f = json.loads(self._call("Details", wid))
         except Exception:
             try:
-                f = json.loads(parse_gvariant_string(self._call("GetFrameRect", wid)))
+                f = json.loads(self._call("GetFrameRect", wid))
             except Exception:
                 return None, False
         found = Rect(f["x"], f["y"], f["width"], f["height"]), bool(f.get("minimized"))
@@ -145,9 +171,6 @@ class GnomeBackend:
 
     def _query_idle(self) -> float | None:
         try:
-            out = self._gdbus(["--session", "--dest", "org.gnome.Mutter.IdleMonitor", "--object-path",
-                               "/org/gnome/Mutter/IdleMonitor/Core", "--method",
-                               "org.gnome.Mutter.IdleMonitor.GetIdletime"], timeout=1.0)
-            return int(re.search(r"(\d+)\s*,?\s*\)", out).group(1)) / 1000.0
+            return self._dbus(*IDLE, "GetIdletime", timeout=1.0)[0] / 1000.0
         except Exception:
             return None

@@ -320,9 +320,24 @@ def test_gnome_skips_minimised_windows():
               {"id": 2, "title": "minimised video", "pid": 6}]
     details = {1: {"x": 0, "y": 0, "width": 800, "height": 600, "minimized": False},
                2: {"x": 0, "y": 0, "width": 1920, "height": 1080, "minimized": True}}
-    reply = lambda obj: "('" + json.dumps(obj) + "',)"
-    b._call = lambda method, *a: reply(listed) if method == "List" else reply(details[a[0]])
+    b._call = lambda method, *a: json.dumps(listed if method == "List" else details[a[0]])
     assert [w.title for w in b.windows()] == ["editor"] and b.active_window().title == "editor"
+
+
+def test_gnome_gdbus_fallback(monkeypatch):
+    """Without PyGObject every call is a gdbus process; its printed results are read back."""
+    import subprocess
+    from gazehop.backends import gnome
+    b = gnome.GnomeBackend.__new__(gnome.GnomeBackend)
+    b._bus, sent = None, []
+    outputs = {"List": """('[{"id": 1}]',)\n""", "Activate": "()\n", "GetIdletime": "(uint64 4500,)\n"}
+
+    def run(cmd, **_k):
+        sent.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, outputs[cmd[cmd.index("--method") + 1].rsplit(".", 1)[1]], "")
+    monkeypatch.setattr(gnome.subprocess, "run", run)
+    assert b._call("List") == '[{"id": 1}]' and b._call("Activate", 7) == ""
+    assert sent[-1][-1] == "7" and b._dbus(*gnome.IDLE, "GetIdletime") == (4500,)
 
 
 def _dots(rng, target, n_dots=64, frames=8):
