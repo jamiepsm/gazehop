@@ -131,7 +131,10 @@ def draw_overlay(frame, pts, readable: bool):
     green, amber, red, white = (90, 220, 60), (40, 180, 255), (70, 70, 255), (255, 255, 255)     # BGR
 
     def label(text, colour):
-        cv2.putText(img, text, (11, 23), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 3, cv2.LINE_AA)
+        # on a dark box, readable on any picture (a thick black copy as outline spaces its letters
+        # wider than the text and shows as a second, shifted copy)
+        (tw, th), base = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1)
+        cv2.rectangle(img, (4, 22 - th - 5), (16 + tw, 22 + base + 2), (0, 0, 0), -1)
         cv2.putText(img, text, (10, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.55, colour, 1, cv2.LINE_AA)
 
     if pts is None or len(pts) < 478:
