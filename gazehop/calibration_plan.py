@@ -6,7 +6,7 @@ import math
 from .geometry import Rect
 
 EYES, NOSE, MOVE, GLIDE = "eyes", "nose", "move", "glide"
-GLIDE_S = 30.0      # seconds the gliding red dot takes to go round a screen
+GLIDE_S = 40.0      # seconds the gliding red dot takes to go round a screen
 
 
 def glide(r: Rect, t: float) -> tuple:

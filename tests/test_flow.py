@@ -67,6 +67,8 @@ def faketk(monkeypatch):
     monkeypatch.delitem(sys.modules, "gazehop.calibration", raising=False)
     monkeypatch.delitem(sys.modules, "gazehop.app", raising=False)
     monkeypatch.setattr("gazehop.dot._x11", ())     # no real X windows from a test: the Tk dot, faked
+    import gazehop.calibration
+    monkeypatch.setattr(gazehop.calibration, "clock", lambda: FakeTk.now)
     return mod
 
 
@@ -109,7 +111,7 @@ def calibrate(root, screens, keep=True, **kw):
 
 def test_calibration_flow(faketk):
     model, took = calibrate(FakeTk(), [SCREEN])
-    assert model is not None and 40 < took < 100     # "about a minute" plus prompts
+    assert model is not None and 40 < took < 110     # "about a minute" plus prompts
     assert model.keyboard_line is not None and model.keyboard_line > SCREEN.bottom
     rng, errs = random.Random(9), []
     for _ in range(200):

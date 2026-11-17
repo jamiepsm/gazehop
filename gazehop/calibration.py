@@ -26,9 +26,12 @@ PHASE = {   # kind: (settle s, collect s, colour, hint)
     MOVE: (0.5, 4.0, "#30d158", "Eyes on the green dot — slowly move your head around"),
     GLIDE: (1.0, GLIDE_S, "#ff453a", "Head still — follow the red dot with your eyes"),
 }
-TICK = 0.033        # s between moves of the gliding dot
-# ponytail: LAG is a fixed guess; fit it per person (shift labels, keep the lowest error) if it matters
-LAG = 0.15          # s the eyes trail a moving dot, plus the camera picture's age
+TICK_MS = 16        # between moves of the gliding dot: 60 per second, so it moves fluently
+# the eyes trail a moving dot, and the camera picture is a moment old. 0.3 s cut the held-out error
+# from 92 to 71 px on the first real recording (tools/measure.py sweeps it).
+# ponytail: one value for everyone; fit it per person if people differ much
+LAG = 0.3
+clock = time.monotonic  # the gliding dot's clock (tests use a simulated one)
 CATCH_UP = 0.5      # s after it starts moving before samples count: the eyes are still catching up
 
 
@@ -255,6 +258,7 @@ class Calibration:
         # a new phase gets a moment for the instruction to sink in
         lead = 1.5 if self.i > 0 and steps[self.i - 1][1] != kind else 0.0
         self.gliding = kind == GLIDE
+        self._dot_at, self._second = p, 0
         for k in range(len(self.screens)):
             if k == self.b:
                 self._draw(k, hint=hint, dot=p, colour=colour)
@@ -263,7 +267,7 @@ class Calibration:
         centre = self.screens[self.b].mid
         if kind == GLIDE:
             self.group += 1
-            self.root.after(int((lead + settle) * 1000), lambda: self._glide(0))
+            self.root.after(int((lead + settle) * 1000), lambda: self._glide(clock()))
             return
         # let the eyes (or head) land, then sample
         self.root.after(int((lead + settle) * 1000), lambda: self._set_target((p, kind, centre)))
@@ -274,27 +278,26 @@ class Calibration:
             self.group += 1
             self.target = t
 
-    def _glide(self, n: int) -> None:
-        """Moves the red dot one tick along its path. Samples are labelled with where the dot was
-        LAG ago, as the eyes trail it; each second of the path is its own group, so held-out
-        checks can't test on frames right next to ones they learned from."""
-        # ponytail: time counted in ticks (testable on a fake clock); a busy main loop slows the dot a
-        # little, LAG then is a little off. Use the real clock if that shows in the error.
+    def _glide(self, start: float) -> None:
+        """Puts the red dot where it should be by now on its path (by the clock, so a busy moment
+        never slows it down). Samples are labelled with where the dot was LAG ago, as the eyes
+        trail it; each second of the path is its own group, so held-out checks can't test on
+        frames right next to ones they learned from."""
         if self.done:
             return
-        t, r = n * TICK, self.screens[self.b]
+        t, r = clock() - start, self.screens[self.b]
         if t > GLIDE_S:
             self.gliding = False
             self._step_done()
             return
-        if n:
-            (x, y), (ox, oy) = glide(r, t), glide(r, t - TICK)
-            self.canvases[self.b].move("dot", x - ox, y - oy)
+        x, y = glide(r, t)
+        self.canvases[self.b].move("dot", x - self._dot_at[0], y - self._dot_at[1])
+        self._dot_at = (x, y)
         if t >= CATCH_UP:
-            if int(t) != int(t - TICK):
-                self.group += 1
+            if int(t) != self._second:
+                self.group, self._second = self.group + 1, int(t)
             self.target, self.glide_t = (glide(r, t - LAG), GLIDE, r.mid), t
-        self.root.after(int(TICK * 1000), lambda: self._glide(n + 1))
+        self.root.after(TICK_MS, lambda: self._glide(start))
 
     def _step_done(self) -> None:
         self.target = None

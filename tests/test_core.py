@@ -414,7 +414,7 @@ def test_record_and_measure(tmp_path, capsys):
     spec.loader.exec_module(measure)
     measure.main(str(tmp_path))
     out = capsys.readouterr().out
-    assert "straight" in out and "3D" in out and "lag 0.15" in out and out.count(" px ") == 9, out
+    assert "straight" in out and "3D" in out and "lag 0.30" in out and out.count(" px ") == 10, out
     # a face straight in front of the camera: the 3D eye pictures look like the level ones
     _, rows = measure.load(str(tmp_path))
     assert np.corrcoef(measure.level(rows[0]), measure.normalised(rows[0]))[0, 1] > 0.9

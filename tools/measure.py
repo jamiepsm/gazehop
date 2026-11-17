@@ -125,7 +125,7 @@ def main(folder: str) -> None:
     for name, e in eyes.items():
         print(f"{name:20s}", report(*fit(screens, rows, e)))
     if any(row["glide"] for row in rows):
-        for lag in (0.0, 0.05, 0.1, 0.15, 0.2, 0.3):
+        for lag in (0.1, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5):
             print(f"lag {lag:.2f} s{'':11s}", report(*fit(screens, rows, eyes["level (now)"], lag)))
 
 
