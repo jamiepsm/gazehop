@@ -220,7 +220,7 @@ def test_add_round_and_profiles(faketk, monkeypatch, tmp_path):
     from gazehop.model import GazeModel
     monkeypatch.setattr(config, "data_dir", lambda: str(tmp_path))
     first, _ = calibrate(FakeTk(), [SCREEN])
-    err = first.typical_error()
+    err = first.error
     assert err is not None and 0 < err < 150
 
     # the same person with glasses: the eyes read differently (shifted iris reading)

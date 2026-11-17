@@ -210,7 +210,7 @@ class GazeModel:
     median_width: float | None = None
     pose_std: list | None = None
     kernel: Kernel | None = None        # the non-linear correction, if it helps this person
-    error: float | None = None          # held-out median error in px, measured when fitted
+    error: float | None = None          # held-out median error in px (every 4th dot), measured when fitted
 
     def __post_init__(self):
         if self.kernel is not None:
@@ -334,24 +334,6 @@ class GazeModel:
             m.keyboard_line = (bottom + ky) / 2 if ky > bottom else None
         m._index()
         return m
-
-    def typical_error(self) -> float | None:
-        """Median error in pixels on calibration dots the model was not fitted on (every 4th dot is
-        held out and predicted from the others). None with too little data."""
-        if self.error is not None:
-            return self.error
-        dots: dict = {}
-        group = [dots.setdefault((int(s.x), int(s.y)), len(dots)) for s in self.calib]
-        test = [s for s, g in zip(self.calib, group) if g % 4 == 0]
-        train = [s for s, g in zip(self.calib, group) if g % 4 != 0]
-        if len(test) < 5 or len(train) < 20:
-            return None
-        r = Regressor.fit([full_features(s.f) for s in train], [(s.x, s.y) for s in train],
-                          [s.w for s in train], self.full.lam)
-        if r is None:
-            return None
-        errs = [math.hypot(p[0] - s.x, p[1] - s.y) for s in test for p in [r.predict(full_features(s.f))]]
-        return float(np.median(errs))
 
     # ---- persistence
 

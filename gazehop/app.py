@@ -146,7 +146,7 @@ class App:
         self._reset_filters()
         self.add_round = False
         print(f"gazehop: calibrated ({len(model.calib)} samples). Saved to {self.model_file}")
-        err = model.typical_error()
+        err = model.error
         if err is not None:
             width = min(r.w for r in self.screens)
             verdict = "good" if err < 0.08 * width else "usable" if err < 0.15 * width else "rough — try better light, or add a round"

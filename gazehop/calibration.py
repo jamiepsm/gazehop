@@ -284,7 +284,7 @@ class Calibration:
     def _review(self, model) -> None:
         """Last screen: both calibrations follow your eyes live, so you can judge before keeping."""
         self.review = model
-        new, old = model.typical_error(), self.previous.typical_error() if self.previous else None
+        new, old = model.error, self.previous.error if self.previous else None
         lines = ["Done — now check it.", "", "Look at a few things on your screen" + ("s." if len(self.screens) > 1 else "."),
                  "The green ring is where the new calibration thinks you are looking."]
         if self.previous:

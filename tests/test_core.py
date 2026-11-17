@@ -326,16 +326,19 @@ def _dots(rng, target, n_dots=64, frames=8):
     return out
 
 
-def test_kernel_kept_only_where_it_helps(tmp_path):
+def test_kernel_kept_only_where_it_helps(tmp_path, monkeypatch):
     """Gaze that bends (here: cubic in head turn) gets the non-linear correction and a much smaller
     held-out error; gaze the linear model already explains gets none."""
+    from gazehop import model
     from gazehop.model import GazeModel
     screens = [Rect(0, 0, 2000, 1000)]
     bent = _dots(random.Random(1), lambda u, v: (1000 + 300 * u + 600 * u ** 3, 500 + 300 * v + 150 * u * v))
     m = GazeModel.fit(bent, screens)
     assert m.kernel is not None
-    plain = GazeModel(m.head, m.full, m.screens, m.calib).typical_error()      # same data, linear only
-    assert m.typical_error() < 0.7 * plain, (m.typical_error(), plain)
+    with monkeypatch.context() as mp:            # same data, linear only: no kernel is good enough
+        mp.setattr(model, "KERNEL_GAIN", 0)
+        plain = GazeModel.fit(bent, screens).error
+    assert m.error < 0.7 * plain, (m.error, plain)
 
     straight = _dots(random.Random(2), lambda u, v: (1000 + 600 * u, 500 + 300 * v))
     assert GazeModel.fit(straight, screens).kernel is None
@@ -343,7 +346,7 @@ def test_kernel_kept_only_where_it_helps(tmp_path):
     path = str(tmp_path / "model.json")         # saved and loaded, it predicts the same
     m.save(path)
     again = GazeModel.load(path, screens)
-    assert again.kernel is not None and again.typical_error() == m.typical_error()
+    assert again.kernel is not None and again.error == m.error
     assert again.predict(bent[5].f) == pytest.approx(m.predict(bent[5].f), abs=0.01)
     refit = again.refit()                       # click learning keeps it without refitting it
     assert refit.kernel is again.kernel
