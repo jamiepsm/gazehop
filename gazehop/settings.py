@@ -13,7 +13,7 @@ from .ui import ACCENT, APP_NAME, BG, CARD, FG, LINE, MUTED, OFF, WARN, button, 
 
 RESTART = f"Takes effect the next time {APP_NAME} starts."
 # tab -> rows of (key, label, explanation, control). A control is "switch", "camera", "hotkey",
-# or (lowest, highest, step, unit) for a slider.
+# "colour", a list of (value, label) choices, or (lowest, highest, step, unit) for a slider.
 PAGES = [
     ("Switching", [
         ("switch_delay_ms", "Screen delay", "How long you look at another screen before focus moves there.",
@@ -37,6 +37,10 @@ PAGES = [
     ]),
     ("Tracking", [
         ("camera", "Camera", RESTART, "camera"),
+        ("camera_mode", "Camera and calls",
+         "Keep: no other app can use the camera (Pause frees it). Give to calls: while an app uses the "
+         f"microphone, {APP_NAME} frees the camera and keeps focus where it is.",
+         [("keep", "Keep"), ("calls", "Give to calls")]),
         ("smoothing", "Smoothing", "How many recent estimates are averaged. Lower is faster but jumpier.",
          (1, 20, 1, "")),
         ("learn", "Learn from clicks", f"Every click teaches {APP_NAME} where you were looking.", "switch"),
@@ -252,6 +256,19 @@ class SettingsWindow:
             self.set_cameras(self._cameras)
         elif control == "hotkey":
             self._hotkey_row(row, note)
+        elif isinstance(control, list):
+            box, made = tk.Frame(row, bg=CARD), []
+            box.pack(side="right")
+
+            def show(v, key=key, control=control, box=box, made=made) -> None:
+                for b in made:
+                    b.destroy()
+                made[:] = [button(box, text, lambda val=val: (self._set(key, val), show(val)),
+                                  primary=val == v, on=CARD) for val, text in control]
+                for b in made:
+                    b.pack(side="left", padx=(6, 0))
+            show(value)
+            self._show[key] = show
         elif control == "colour":
             from .dot import colour_or_default      # config.json is edited by hand: "red" must not crash
             box = tk.Frame(row, bg=CARD)

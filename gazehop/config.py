@@ -24,6 +24,7 @@ DEFAULTS = {
     "hotkey": "<ctrl>+<alt>+g",   # pause / resume
     "check_updates": True,    # ask GitHub once per start whether a newer version is out
     "start_at_login": False,  # open gazehop when you log in (see set_start_at_login)
+    "camera_mode": "keep",    # keep | calls (free the camera while the microphone is in use) | share
     "config_version": 2,
 }
 # defaults of config version 1; a value still equal to one of these was never changed by the user

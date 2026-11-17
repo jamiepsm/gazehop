@@ -202,6 +202,8 @@ class Tracker:
         self.error: str | None = None
         self._latest = None         # (seq, features | None, monotonic time, raw | None)
         self.record = False             # also hand out the raw face (record.Recorder) with each reading
+        self.active = True              # False: read no faces and free the camera for other apps
+        self.sink = None                # something with write(frame) that gets every camera frame
         self._seq = 0
         self.frames = self.faces = 0    # counters for the speed report
         self.preview = False            # set True while a camera view is open
@@ -254,10 +256,28 @@ class Tracker:
             with vision.FaceLandmarker.create_from_options(options) as detector:
                 while not self._stop.is_set():
                     start = time.monotonic()
+                    if not (self.active or self.sink):      # nobody needs it: other apps may have it
+                        if cap is not None:
+                            cap.release()
+                            cap = None
+                            self._publish(None)
+                        self._stop.wait(0.2)
+                        continue
+                    if cap is None:
+                        cap = open_camera(self.camera)
+                        if cap is None:                 # still taken by another app: ask again soon
+                            self._stop.wait(1.0)
+                            continue
                     ok, frame = cap.read()
-                    if not ok:
+                    if not ok:                  # unplugged, or taken: let go, and open it again later
                         self._publish(None)
-                        time.sleep(0.2)
+                        cap.release()
+                        cap = None
+                        self._stop.wait(1.0)
+                        continue
+                    if self.sink:
+                        self.sink.write(frame)
+                    if not self.active:
                         continue
                     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     ts = max(last_ts + 1, int((start - t0) * 1000))
@@ -279,6 +299,7 @@ class Tracker:
                             self._preview = picture
                     self._publish(f, raw)
                     self._stop.wait(max(0.0, 1 / self.FPS - (time.monotonic() - start)))
-            cap.release()
+            if cap is not None:
+                cap.release()
         except Exception as e:
             self.error = f"Camera/tracker failed: {e}"

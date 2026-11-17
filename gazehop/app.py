@@ -32,6 +32,8 @@ class App:
             print("gazehop: your saved calibration does not fit (a new gazehop version reads the eyes "
                   "differently, or the screens changed): please calibrate again.")
         self.add_round = add_round and saved is not None
+        self.in_call = False            # camera_mode "calls": the camera is freed for a call
+        self._camera_checked = -1e9
         if add_round and saved is None:
             print("gazehop: nothing to add to (no calibration for this screen layout) — starting a fresh one.")
         # an added round builds on the saved model; a plain recalibration starts over
@@ -76,6 +78,7 @@ class App:
         for name in ("SIGTERM", "SIGHUP"):
             if hasattr(signal, name):
                 signal.signal(getattr(signal, name), lambda *_: self.root.after(0, self.quit))
+        self._update_camera(time.monotonic())   # in a call already: don't take the camera from it
         self.tracker.start()
         self.activity.start(self.cfg["hotkey"])
         if self._calibrate_first:
@@ -234,6 +237,7 @@ class App:
                 webbrowser.open(self.update[1])
             elif ev[0] == "quit":
                 self.quit()
+        self._update_camera(now)
         if self.tray:
             self.tray.refresh()
         if self.window:
@@ -266,7 +270,24 @@ class App:
             self._dot.move_to(self._gaze)
         self.focuser.update(self._gaze, head, self.model.keyboard_line)
 
+    def _update_camera(self, now: float) -> None:
+        """Frees the camera while paused, and (camera_mode "calls") while the microphone is in use;
+        takes it back afterwards. Focus holds meanwhile: without face readings nothing moves."""
+        if now - self._camera_checked >= 1.0:
+            self._camera_checked = now
+            from .meetings import mic_in_use
+            in_call = self.cfg["camera_mode"] == "calls" and mic_in_use()
+            if in_call != self.in_call:
+                self.in_call = in_call
+                self._reset_filters()
+                print("gazehop: a call started: the camera is free for it" if in_call else
+                      "gazehop: the call ended: using the camera again")
+        self.tracker.active = bool(self.calibration) or not (self.paused or self.in_call)
+
     def _speed_report(self, now: float) -> None:
+        if not self.tracker.active:     # camera freed (paused, a call): measure once it is back
+            self._report = (now, self.tracker.frames, self.tracker.faces)
+            return
         t, frames, faces = self._report
         self._report = None
         n = self.tracker.frames - frames
@@ -349,7 +370,9 @@ class App:
         if self.model is None:
             return "Not calibrated", "Press Calibrate to start (about a minute per screen)."
         if self.paused:
-            return "Paused", "Focus stays where it is until you resume."
+            return "Paused", "Focus stays where it is until you resume. The camera is free for other apps."
+        if self.in_call:
+            return "In a call", "The camera is free for your call. Focus stays where it is."
         if self._fresh() is None:
             return "No readable face", "Sit in front of the camera with your face evenly lit."
         if self.focuser.at_keyboard:

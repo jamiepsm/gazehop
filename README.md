@@ -163,6 +163,7 @@ Linux) if you prefer to edit them by hand; restart afterwards.
 | `hotkey` | `<ctrl>+<alt>+g` | Pause/resume |
 | `check_updates` | true | Check once per start whether a newer version is out |
 | `start_at_login` | false | Open GazeHop when you log in |
+| `camera_mode` | keep | `keep`: no other app can use the camera (Pause frees it); `calls`: while an app uses the microphone, GazeHop frees the camera and keeps focus where it is |
 
 ## Updating
 

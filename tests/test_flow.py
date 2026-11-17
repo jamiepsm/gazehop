@@ -166,7 +166,7 @@ def test_app_focus_follows_gaze(faketk, monkeypatch, tmp_path):
     monkeypatch.setattr(appmod, "ensure_model", lambda d: "unused")
     wins = [Win(1, Rect(0, 0, 780, 900), 10, "editor"), Win(2, Rect(820, 0, 780, 900), 11, "terminal")]
     backend = FakeBackend([SCREEN], wins, 1)
-    cfg = dict(CFG, camera=0, learn=True, smoothing=3, show_dot=False, hotkey="<ctrl>+<alt>+g")
+    cfg = dict(CFG, camera=0, learn=True, smoothing=3, show_dot=False, hotkey="<ctrl>+<alt>+g", camera_mode="keep")
 
     app = appmod.App(backend, cfg)
     assert app.model is None            # nothing calibrated yet
@@ -218,6 +218,25 @@ def test_app_focus_follows_gaze(faketk, monkeypatch, tmp_path):
     app.events.put(("pause",))
     look((300, 450), (500, 450), 1.0)
     assert backend.focused == [2, 1]
+
+    # a call starts (the microphone is in use): with camera_mode "calls" the camera is freed
+    import gazehop.meetings
+    monkeypatch.setattr(gazehop.meetings, "mic_in_use", lambda: True)
+    app._camera_checked = -1e9
+    look((300, 450), (500, 450), 0.1)
+    assert app.tracker.active and not app.in_call         # "keep": the call doesn't get it
+    cfg["camera_mode"], app._camera_checked = "calls", -1e9
+    look((300, 450), (500, 450), 0.1)
+    assert not app.tracker.active and app.status()[0] == "In a call"
+    monkeypatch.setattr(gazehop.meetings, "mic_in_use", lambda: False)
+    app._camera_checked = -1e9
+    look((300, 450), (500, 450), 0.1)
+    assert app.tracker.active and not app.in_call
+    app.events.put(("pause",))
+    look((300, 450), (500, 450), 0.1)
+    assert not app.tracker.active                         # paused: the camera is free too
+    app.events.put(("pause",))
+    look((300, 450), (500, 450), 0.1)
 
     # docked at another desk: that layout has no calibration yet; back home, the first one returns
     home, work = app.model, [Rect(0, 0, 1600, 900), Rect(1600, 0, 1600, 900)]
