@@ -23,6 +23,7 @@ DEFAULTS = {
     "dot_color": "#d0d0d6",   # the gaze dot's colour, #rrggbb
     "hotkey": "<ctrl>+<alt>+g",   # pause / resume
     "check_updates": True,    # ask GitHub once per start whether a newer version is out
+    "start_at_login": False,  # open gazehop when you log in (see set_start_at_login)
     "config_version": 2,
 }
 # defaults of config version 1; a value still equal to one of these was never changed by the user
@@ -35,6 +36,50 @@ def data_dir() -> str:
     else:
         base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
     return os.path.join(base, "gazehop")
+
+
+def login_command() -> list:
+    """What the menu entry runs, as a command that works from any folder."""
+    if getattr(sys, "frozen", False):           # the packaged app
+        return [sys.executable, "--window"]
+    exe = sys.executable
+    if sys.platform == "win32":                 # pythonw: no console window
+        w = os.path.join(os.path.dirname(exe), "pythonw.exe")
+        exe = w if os.path.exists(w) else exe
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return [exe, os.path.join(here, "launcher.py"), "--window"]
+
+
+def set_start_at_login(on: bool) -> None:
+    """Adds or removes gazehop from what the desktop starts at login: an autostart entry
+    (~/.config/autostart) on Linux, a Run value in the registry on Windows."""
+    cmd = login_command()
+    if sys.platform == "win32":
+        import subprocess
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run",
+                            0, winreg.KEY_SET_VALUE) as key:
+            if on:
+                winreg.SetValueEx(key, "GazeHop", 0, winreg.REG_SZ, subprocess.list2cmdline(cmd))
+            else:
+                try:
+                    winreg.DeleteValue(key, "GazeHop")
+                except FileNotFoundError:
+                    pass
+        return
+    path = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "autostart",
+                        "gazehop.desktop")
+    if not on:
+        if os.path.exists(path):
+            os.remove(path)
+        return
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    # ponytail: paths are quoted, not escaped: a path containing " $ ` or \ would break the entry
+    exec_line = " ".join(f'"{a}"' for a in cmd)
+    icon = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.png")
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(f"[Desktop Entry]\nType=Application\nName=GazeHop\nComment=Keyboard focus follows your eyes\n"
+                 f"Exec={exec_line}\nIcon={icon}\nStartupWMClass=gazehop\nTerminal=false\n")
 
 
 def config_path() -> str:

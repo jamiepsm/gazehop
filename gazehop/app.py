@@ -312,6 +312,11 @@ class App:
         self._sync_dot()
         if "dot_color" in changes and self._dot:
             self._dot.set_colour(changes["dot_color"])
+        if "start_at_login" in changes:
+            try:
+                config.set_start_at_login(changes["start_at_login"])
+            except OSError as e:
+                print(f"gazehop: could not change start at login: {e}", file=sys.stderr)
         config.save(changes)
 
     @property

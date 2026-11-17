@@ -49,6 +49,7 @@ PAGES = [
         ("hotkey", "Pause shortcut", "For example <ctrl>+<alt>+g. " + RESTART, "hotkey"),
         ("check_updates", "Check for updates",
          "Once per start, ask GitHub whether a newer version is out. Nothing about you is sent.", "switch"),
+        ("start_at_login", "Start at login", f"Open {APP_NAME} when you log in.", "switch"),
     ]),
 ]
 

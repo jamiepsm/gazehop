@@ -162,6 +162,7 @@ Linux) if you prefer to edit them by hand; restart afterwards.
 | `dot_color` | `#d0d0d6` | The gaze dot's colour (light grey) |
 | `hotkey` | `<ctrl>+<alt>+g` | Pause/resume |
 | `check_updates` | true | Check once per start whether a newer version is out |
+| `start_at_login` | false | Open GazeHop when you log in |
 
 ## Updating
 

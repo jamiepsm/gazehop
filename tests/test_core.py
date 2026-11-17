@@ -1,6 +1,7 @@
 import math
 import os
 import random
+import sys
 
 import numpy as np
 import pytest
@@ -418,3 +419,21 @@ def test_record_and_measure(tmp_path, capsys):
     _, rows = measure.load(str(tmp_path))
     assert np.corrcoef(measure.level(rows[0]), measure.normalised(rows[0]))[0, 1] > 0.9
     assert measure.axes_check(rows) < 1
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Linux autostart entry")
+def test_start_at_login(tmp_path, monkeypatch):
+    """The autostart entry runs what the menu entry runs, from any folder; off removes it."""
+    import subprocess
+    from gazehop import __version__, config
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    config.set_start_at_login(True)
+    entry = (tmp_path / "autostart" / "gazehop.desktop").read_text()
+    exec_line = next(l for l in entry.splitlines() if l.startswith("Exec="))
+    cmd = [a.strip('"') for a in exec_line[5:].split('" "')]
+    assert cmd == config.login_command() and cmd[-1] == "--window"
+    out = subprocess.run(cmd[:-1] + ["--version"], cwd=tmp_path, capture_output=True, text=True)
+    assert out.stdout.strip() == __version__, out.stderr
+    config.set_start_at_login(False)
+    config.set_start_at_login(False)        # already off: fine
+    assert not (tmp_path / "autostart" / "gazehop.desktop").exists()
