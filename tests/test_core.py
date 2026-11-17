@@ -1,4 +1,5 @@
 import math
+import os
 import random
 
 import numpy as np
@@ -385,3 +386,30 @@ def test_tilted_head_gives_level_eye_pictures():
         mid, w = (lm_t[outer] + lm_t[inner]) / 2, float(np.hypot(*(lm_t[outer] - lm_t[inner])))
         straight += eye_patch(tilted, mid[0], mid[1], w)
     assert corr(level, straight) < 0.85
+
+
+def test_record_and_measure(tmp_path, capsys):
+    """A recorded calibration can be refitted with each eye-picture variant (tools/measure.py)."""
+    import importlib.util
+    import cv2
+    from gazehop.model import Sample
+    from gazehop.record import Recorder, face_crop
+    rec, rng = Recorder(str(tmp_path)), random.Random(0)
+    for i in range(160):
+        u, v = rng.uniform(-1, 1), rng.uniform(-1, 1)
+        gray = np.full((480, 640), 150, np.uint8)
+        for cx in (275, 365):
+            cv2.ellipse(gray, (cx, 220), (26, 11), 0, 0, 360, 230, -1)
+            cv2.circle(gray, (int(cx + 8 * u), int(220 + 4 * v)), 8, 30, -1)
+        lm = _face(8 * u)
+        f = features(lm, np.eye(4), gray)
+        x, y = 1000 + 600 * u, 500 + 300 * v
+        rec.add(Sample(f, x, y, 1000, 500, g=i // 8), (*face_crop(gray, lm), lm, np.eye(4), (640, 480)),
+                (0, i / 8) if i < 80 else None)
+    rec.save([Rect(0, 0, 2000, 1000)])
+    spec = importlib.util.spec_from_file_location("measure", os.path.join(os.path.dirname(__file__), "..", "tools", "measure.py"))
+    measure = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(measure)
+    measure.main(str(tmp_path))
+    out = capsys.readouterr().out
+    assert "straight" in out and "level" in out and "lag 0.15" in out and out.count(" px ") == 8, out

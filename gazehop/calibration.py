@@ -52,6 +52,7 @@ class Calibration:
         self.b = self.i = 0
         self.group = 0                  # numbers the steps (a dot, a second of the glide) for held-out checks
         self.gliding = False
+        self.glide_t = None             # seconds along the gliding dot's path, while it samples
         self.target = None              # (point, kind, screen centre) while sampling
         self.collecting_keyboard = False
         self.waiting = True             # for Space
@@ -292,7 +293,7 @@ class Calibration:
         if t >= CATCH_UP:
             if int(t) != int(t - TICK):
                 self.group += 1
-            self.target = (glide(r, t - LAG), GLIDE, r.mid)
+            self.target, self.glide_t = (glide(r, t - LAG), GLIDE, r.mid), t
         self.root.after(int(TICK * 1000), lambda: self._glide(n + 1))
 
     def _step_done(self) -> None:

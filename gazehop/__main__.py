@@ -100,7 +100,7 @@ def cmd_run(args, calibrate_only=False) -> int:
         app = App(backend, cfg, dry_run=args.dry_run, force_calibrate=calibrate_only or args.recalibrate,
                   add_round=args.add, profile=args.profile,
                   # the tray icon is there whenever gazehop is at work; `calibrate` quits when done
-                  window=args.window, tray=not (args.no_tray or calibrate_only))
+                  window=args.window, tray=not (args.no_tray or calibrate_only), record=args.record)
     except ImportError as e:
         hint = "sudo apt install python3-tk" if "tkinter" in str(e) else "pip install -r requirements.txt"
         sys.exit(f"gazehop: missing dependency ({e}). Try: {hint}")
@@ -171,6 +171,8 @@ def main(argv=None) -> int:
     p.add_argument("--no-tray", action="store_true", help="no tray icon")
     p.add_argument("--foreground", action="store_true",
                    help="with --window: stay attached to the terminal (Ctrl+C quits) instead of running in the background")
+    p.add_argument("--record", metavar="DIR",
+                   help="with calibrate: save what the camera saw, to compare eye-picture variants (tools/measure.py)")
     p.add_argument("--profile", metavar="NAME",
                    help="use a separate named calibration, e.g. --profile glasses")
     args = p.parse_args(argv)
@@ -193,6 +195,8 @@ def main(argv=None) -> int:
         return cmd_selftest(args)
     if args.add and args.command != "calibrate":
         p.error("--add goes with the calibrate command:  gazehop calibrate --add")
+    if args.record and args.command != "calibrate":
+        p.error("--record goes with the calibrate command:  gazehop calibrate --record DIR")
     try:
         return cmd_run(args, calibrate_only=args.command == "calibrate")
     except SystemExit as e:

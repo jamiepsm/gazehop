@@ -19,7 +19,7 @@ FRESH = 0.25    # a face reading older than this is stale
 
 class App:
     def __init__(self, backend, cfg: dict, dry_run=False, force_calibrate=False, add_round=False, profile=None,
-                 window=False, tray=False):
+                 window=False, tray=False, record=None):
         import tkinter as tk
         self.backend, self.cfg, self.dry_run = backend, cfg, dry_run
         from .ui import APP_CLASS, set_icon
@@ -45,6 +45,10 @@ class App:
         self.focuser = Focuser(backend, cfg, self.activity, dry_run=dry_run)
         self.focuser.on_action = self._switched
         self.tracker = Tracker(cfg["camera"], ensure_model(config.data_dir()))
+        self.recorder = None
+        if record:      # `record`: a folder to save what calibration sees in (developer tool)
+            from .record import Recorder
+            self.recorder, self.tracker.record = Recorder(record), True
         self.events: queue.Queue = queue.Queue()
         self.calibration = None
         self.paused = False
@@ -147,6 +151,8 @@ class App:
         self.calibration.start()
 
     def _calibrated(self, model) -> None:
+        if self.recorder:
+            self.recorder.save(self.screens)
         self.calibration = None
         self.tracker.preview = bool(self.window and self.window.visible)
         if self._dot:
@@ -235,7 +241,10 @@ class App:
         if self.calibration:
             if new and latest[1] is not None and latest[2] - self._cal_last >= 0.07:
                 self._cal_last = latest[2]
-                self.calibration.add(latest[1])
+                cal, n = self.calibration, len(self.calibration.samples)
+                cal.add(latest[1])
+                if self.recorder and len(cal.samples) > n and latest[3] is not None:
+                    self.recorder.add(cal.samples[-1], latest[3], (cal.b, cal.glide_t) if cal.gliding else None)
             return
         screens = self.focuser.screens_now(now)
         if screens and screen_signature(screens) != screen_signature(self.screens):

@@ -197,7 +197,8 @@ class Tracker:
     def __init__(self, camera: int, model_path: str):
         self.camera, self.model_path = camera, model_path
         self.error: str | None = None
-        self._latest = None         # (seq, features | None, monotonic time)
+        self._latest = None         # (seq, features | None, monotonic time, raw | None)
+        self.record = False             # also hand out the raw face (record.Recorder) with each reading
         self._seq = 0
         self.frames = self.faces = 0    # counters for the speed report
         self.preview = False            # set True while a camera view is open
@@ -222,12 +223,12 @@ class Tracker:
         with self._lock:
             return self._preview
 
-    def _publish(self, f) -> None:
+    def _publish(self, f, raw=None) -> None:
         with self._lock:
             self._seq += 1
             self.frames += 1
             self.faces += f is not None
-            self._latest = (self._seq, f, time.monotonic())
+            self._latest = (self._seq, f, time.monotonic(), raw)
 
     def _run(self) -> None:
         try:
@@ -255,18 +256,21 @@ class Tracker:
                     ts = max(last_ts + 1, int((start - t0) * 1000))
                     last_ts = ts
                     res = detector.detect_for_video(mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb), ts)
-                    f = pts = None
+                    f = pts = raw = None
                     if res.face_landmarks and res.facial_transformation_matrixes:
                         h, w = frame.shape[:2]
                         pts = np.array([(p.x * w, p.y * h) for p in res.face_landmarks[0]])
                         if len(pts) >= 478:
-                            f = features(pts, res.facial_transformation_matrixes[0],
-                                         cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
+                            gray, matrix = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), res.facial_transformation_matrixes[0]
+                            f = features(pts, matrix, gray)
+                            if self.record and f is not None:
+                                from .record import face_crop
+                                raw = (*face_crop(gray, pts), pts, np.asarray(matrix), (w, h))
                     if self.preview:
                         picture = draw_overlay(frame, pts, f is not None)
                         with self._lock:
                             self._preview = picture
-                    self._publish(f)
+                    self._publish(f, raw)
                     self._stop.wait(max(0.0, 1 / self.FPS - (time.monotonic() - start)))
             cap.release()
         except Exception as e:
