@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import zlib
 
 DEFAULTS = {
     "camera": 0,              # webcam index (see `gazehop cameras`)
@@ -40,10 +41,12 @@ def config_path() -> str:
     return os.path.join(data_dir(), "config.json")
 
 
-def model_path(profile: str | None = None) -> str:
-    """Each profile (e.g. "glasses") keeps its own calibration; the default one is model.json."""
+def model_path(profile: str | None = None, layout: str = "") -> str:
+    """Each profile (e.g. "glasses") and each screen layout (`model.screen_signature`) keeps its own
+    calibration. Without a layout: the file used before layouts had their own (model.json)."""
     safe = "".join(c for c in (profile or "") if c.isalnum() or c in "-_")
-    return os.path.join(data_dir(), f"model-{safe}.json" if safe else "model.json")
+    tag = f"{zlib.crc32(layout.encode()):08x}" if layout else ""
+    return os.path.join(data_dir(), "-".join(x for x in ("model", safe, tag) if x) + ".json")
 
 
 def load() -> dict:

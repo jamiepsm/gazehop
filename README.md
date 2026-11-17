@@ -128,6 +128,9 @@ around, then press Space to keep the new calibration or Esc to discard it.
   one in evening light. One calibration that has seen them all copes with all of them.
 - **Use a profile instead** when two setups are very different (for example thick glasses with
   strong reflections): each profile is tuned to one setup, but you choose it at start.
+- **Several desks** (a dock at home and one at work): calibrate once at each. gazehop keeps one
+  calibration per set of screens and picks the right one by itself, also when you plug in while
+  it runs.
 - Light your face evenly from the front; a window or lamp behind you hurts the most.
 - Put the camera at the top centre of the screen you use most, and do not move it afterwards.
 - During the red dots keep your head still; during the green dots move it more than feels natural.

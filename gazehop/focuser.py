@@ -57,7 +57,7 @@ class Focuser:
         self._pretend = None        # dry run: (window we "focused", real active window at that moment)
         self._screens = (-1e9, [])  # monitors rarely move; don't re-enumerate on every frame
 
-    def _screens_now(self, now: float):
+    def screens_now(self, now: float):
         if now - self._screens[0] > 1.0:    # 1 s TTL still catches a monitor hotplug quickly
             self._screens = (now, self.backend.screens())
         return self._screens[1]
@@ -65,7 +65,7 @@ class Focuser:
     def update(self, gaze, head, keyboard_line=None) -> None:
         """`gaze` (head + eyes) picks the window; `head` (head pose only) picks the screen."""
         cfg, now = self.cfg, self.clock()
-        screens = self._screens_now(now)
+        screens = self.screens_now(now)
         # looking down at the keyboard (head or just eyes): keep focus exactly where it is
         self.at_keyboard = keyboard_line is not None and (head[1] > keyboard_line or gaze[1] > keyboard_line)
         if self.at_keyboard:

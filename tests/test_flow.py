@@ -172,7 +172,7 @@ def test_app_focus_follows_gaze(faketk, monkeypatch, tmp_path):
     app.calibrate()
     assert app.status()[0] == "Calibrating…"
     app.calibration._finish(calibrate(FakeTk(), [SCREEN])[0])
-    assert app.model is not None and appmod.GazeModel.load(config.model_path(), [SCREEN]) is not None
+    assert app.model is not None and appmod.GazeModel.load(app.model_file, [SCREEN]) is not None
 
     rng = random.Random(5)
 
@@ -216,6 +216,17 @@ def test_app_focus_follows_gaze(faketk, monkeypatch, tmp_path):
     app.events.put(("pause",))
     look((300, 450), (500, 450), 1.0)
     assert backend.focused == [2, 1]
+
+    # docked at another desk: that layout has no calibration yet; back home, the first one returns
+    home, work = app.model, [Rect(0, 0, 1600, 900), Rect(1600, 0, 1600, 900)]
+    app._remember(appmod.Sample(list(face((300, 450), (300, 450), rng)), 300, 450))    # a click not saved yet
+    backend._screens = work
+    look((300, 450), (500, 450), 1.2)
+    assert app.model is None and app.screens == work and app.status()[0] == "Not calibrated"
+    assert len(appmod.GazeModel.load(config.model_path(layout="0,0,1600,900"), [SCREEN]).learned) == len(home.learned)
+    backend._screens = [SCREEN]
+    look((300, 450), (500, 450), 1.2)
+    assert app.model is not None and len(app.model.calib) == len(home.calib)
 
 
 def test_add_round_and_profiles(faketk, monkeypatch, tmp_path):

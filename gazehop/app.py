@@ -11,7 +11,7 @@ import time
 from . import config
 from .activity import Activity
 from .focuser import Focuser
-from .model import GazeModel, OneEuro, Sample
+from .model import GazeModel, OneEuro, Sample, screen_signature
 from .tracker import Tracker, ensure_model
 
 FRESH = 0.25    # a face reading older than this is stale
@@ -26,11 +26,9 @@ class App:
         self.root = tk.Tk(className=APP_CLASS)
         self.root.withdraw()
         set_icon(self.root)     # every window after this gets the icon
-        self.screens = backend.screens()
-        self.model_file = config.model_path(profile)
         self.profile = profile
-        saved = GazeModel.load(self.model_file, self.screens)
-        if saved is None and os.path.exists(self.model_file):
+        saved = self._use_layout(backend.screens())
+        if saved is None and any(os.path.exists(p) for p in (self.model_file, config.model_path(profile))):
             print("gazehop: your saved calibration does not fit (a new gazehop version reads the eyes "
                   "differently, or the screens changed): please calibrate again.")
         self.add_round = add_round and saved is not None
@@ -109,6 +107,24 @@ class App:
             if self.model and self._unfitted:
                 self.model.save(self.model_file)
         return 1 if self.tracker.error else 0
+
+    def _use_layout(self, screens) -> GazeModel | None:
+        """Switches to these screens; returns the calibration made for them, if there is one. Each
+        layout keeps its own (a desk at home and one at work have different screens and camera spots)."""
+        self.screens = screens
+        self.model_file = config.model_path(self.profile, screen_signature(screens))
+        return (GazeModel.load(self.model_file, screens)
+                or GazeModel.load(config.model_path(self.profile), screens))   # saved before layouts had files
+
+    def _layout_changed(self, screens) -> None:
+        if self.model and self._unfitted:
+            self.model.save(self.model_file)    # clicks learned on the screens that just went
+        self._unfitted, self._last_switch = 0, None
+        self.model = self._use_layout(screens)
+        self._reset_filters()
+        print(f"gazehop: the screens changed ({len(screens)} now): " + (
+            f"using the calibration made for them ({len(self.model.calib)} samples)." if self.model else
+            "no calibration for them yet. Press Calibrate in the window or the tray menu."))
 
     def _announce(self) -> None:
         mode = "DRY RUN (not changing focus)" if self.dry_run else "running"
@@ -221,6 +237,9 @@ class App:
                 self._cal_last = latest[2]
                 self.calibration.add(latest[1])
             return
+        screens = self.focuser.screens_now(now)
+        if screens and screen_signature(screens) != screen_signature(self.screens):
+            self._layout_changed(screens)
         if self._report and now - self._report[0] > 5:
             self._speed_report(now)
         if self._last_switch and now - self._last_switch[0] > 5:
