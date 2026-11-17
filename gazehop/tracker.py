@@ -237,6 +237,10 @@ class Tracker:
         try:
             import cv2
             import mediapipe as mp
+            # OpenCV's worker threads (one per core) keep spinning between frames; our pictures are
+            # too small for them to help. One thread: same frame rate, the camera loop's CPU from
+            # 118% of a core to 32% (measured at 17 fps on 12 cores).
+            cv2.setNumThreads(1)
             vision = mp.tasks.vision
             cap = open_camera(self.camera)
             if cap is None:
