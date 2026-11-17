@@ -162,8 +162,20 @@ def test_calibration_plan():
     assert len(edge_points(a, b)) == 3 and all(p[0] == 950 for p in edge_points(a, b))
     assert edge_points(a, Rect(3000, 0, 100, 100)) == []
     blocks = plan([a, b])
-    assert len(blocks) == 2 and len(blocks[0]) == 16 + 3 + 5 + 3
+    assert len(blocks) == 2 and len(blocks[0]) == 1 + 3 + 5 + 3     # glide, edge dots, nose, move
     assert all(a.contains(p) for p, _ in blocks[0]) and all(b.contains(p) for p, _ in blocks[1])
+    from gazehop.calibration_plan import GLIDE_S, glide
+    path = [glide(a, GLIDE_S * i / 300) for i in range(301)]
+    assert all(a.contains(p) for p in path) and path[0] == pytest.approx(path[-1])
+    assert max(math.dist(p, q) for p, q in zip(path, path[1:])) < 40     # 0.1 s apart: no jumps
+
+
+def test_held_out_groups_are_steps():
+    """Frames along a gliding dot each have their own point; they are held out per step (a second
+    of the glide), so a test frame never has its neighbour in the training set."""
+    from gazehop.model import Sample, numbered, step_of
+    s = [Sample([], x, 0, g=x // 10) for x in range(40)] + [Sample([], 5, 5), Sample([], 5, 5)]
+    assert list(numbered(step_of(t) for t in s)) == [i // 10 for i in range(40)] + [4, 4]
 
 
 def test_gvariant_parse():

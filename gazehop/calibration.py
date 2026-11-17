@@ -1,5 +1,5 @@
 """Calibration overlay (Tk). Per screen, three short phases, as in Eyeshift:
-red = eyes only over a 4x4 grid (+ shared screen edges); blue = point your nose at the dot (teaches
+red = eyes only, following a dot that glides over the screen (+ dots at shared screen edges); blue = point your nose at the dot (teaches
 the head model); green = keep looking at the dot while moving your head (teaches the gaze model to
 cancel head movement). Then one look at the keyboard. Esc cancels.
 
@@ -13,7 +13,7 @@ import sys
 import time
 import tkinter as tk
 
-from .calibration_plan import EYES, MOVE, NOSE, plan, preview_spot
+from .calibration_plan import EYES, GLIDE, GLIDE_S, MOVE, NOSE, glide, plan, preview_spot
 from .model import GazeModel, OneEuro, Sample
 from .ui import toplevel
 
@@ -24,7 +24,12 @@ PHASE = {   # kind: (settle s, collect s, colour, hint)
     EYES: (0.6, 1.0, "#ff453a", "Head still — follow the red dot with your eyes"),
     NOSE: (1.0, 1.0, "#0a84ff", "Point your nose at the blue dot"),
     MOVE: (0.5, 4.0, "#30d158", "Eyes on the green dot — slowly move your head around"),
+    GLIDE: (1.0, GLIDE_S, "#ff453a", "Head still — follow the red dot with your eyes"),
 }
+TICK = 0.033        # s between moves of the gliding dot
+# ponytail: LAG is a fixed guess; fit it per person (shift labels, keep the lowest error) if it matters
+LAG = 0.15          # s the eyes trail a moving dot, plus the camera picture's age
+CATCH_UP = 0.5      # s after it starts moving before samples count: the eyes are still catching up
 
 
 
@@ -45,6 +50,8 @@ class Calibration:
         self.samples: list = []
         self.keyboard: list = []
         self.b = self.i = 0
+        self.group = 0                  # numbers the steps (a dot, a second of the glide) for held-out checks
+        self.gliding = False
         self.target = None              # (point, kind, screen centre) while sampling
         self.collecting_keyboard = False
         self.waiting = True             # for Space
@@ -116,8 +123,9 @@ class Calibration:
             p, kind, centre = self.target
             # the head model learns where the head points: the screen centre while only the eyes move,
             # the dot itself when the nose points at it, and nothing while the head is wandering
-            head = centre if kind == EYES else p if kind == NOSE else None
-            self.samples.append(Sample(list(f), p[0], p[1], head[0] if head else None, head[1] if head else None))
+            head = centre if kind in (EYES, GLIDE) else p if kind == NOSE else None
+            self.samples.append(Sample(list(f), p[0], p[1], head[0] if head else None, head[1] if head else None,
+                                       g=self.group))
         if self.collecting_keyboard:
             self.keyboard.append(Sample(list(f), 0, 0))
 
@@ -155,7 +163,7 @@ class Calibration:
 
     def _draw_preview(self, k: int) -> None:
         r = self.screens[k]
-        if k != self.main or self._picture is None:
+        if k != self.main or self._picture is None or self.gliding:     # the gliding dot crosses every spot
             return
         w, h = self._shown.shape[1] / 2, self._shown.shape[0] / 2
         spot = preview_spot(r, [p for p, _kind in self.blocks[k]], w, h)
@@ -176,8 +184,8 @@ class Calibration:
             c.create_text(r.w / 2, 50, text=hint, fill="#bbbbbb", font=("Helvetica", size))
         if dot:
             x, y = dot[0] - r.x, dot[1] - r.y
-            c.create_oval(x - 14, y - 14, x + 14, y + 14, fill=colour, outline="")
-            c.create_oval(x - 3, y - 3, x + 3, y + 3, fill="white", outline="")
+            c.create_oval(x - 14, y - 14, x + 14, y + 14, fill=colour, outline="", tags="dot")
+            c.create_oval(x - 3, y - 3, x + 3, y + 3, fill="white", outline="", tags="dot")
         # always a way out, for the mouse: the keyboard focus may be somewhere else
         c.create_rectangle(r.w - 190, 20, r.w - 20, 56, outline="#333a50", width=1, fill="black", tags="cancel")
         c.create_text(r.w - 105, 38, text="Cancel   Esc", fill="#9a9aa0", font=("Helvetica", 12),
@@ -204,7 +212,7 @@ class Calibration:
             if k == self.b:
                 done = [f"✓ Screen {done_name} calibrated.", ""] if done_name else []
                 self._draw(k, done + [
-                    f"Press Space (or click) to calibrate screen {k + 1} — about 45 seconds.", "",
+                    f"Press Space (or click) to calibrate screen {k + 1} — about a minute.", "",
                     (PHASE[EYES][2], "Red dot: face the middle of the screen, follow it with your eyes only."),
                     (PHASE[NOSE][2], "Blue dot: point your nose at it."),
                     (PHASE[MOVE][2], "Green dot: keep your eyes on it and slowly move your head around —"),
@@ -245,19 +253,47 @@ class Calibration:
         settle, collect, colour, hint = PHASE[kind]
         # a new phase gets a moment for the instruction to sink in
         lead = 1.5 if self.i > 0 and steps[self.i - 1][1] != kind else 0.0
+        self.gliding = kind == GLIDE
         for k in range(len(self.screens)):
             if k == self.b:
                 self._draw(k, hint=hint, dot=p, colour=colour)
             else:
                 self._draw(k)
         centre = self.screens[self.b].mid
+        if kind == GLIDE:
+            self.group += 1
+            self.root.after(int((lead + settle) * 1000), lambda: self._glide(0))
+            return
         # let the eyes (or head) land, then sample
         self.root.after(int((lead + settle) * 1000), lambda: self._set_target((p, kind, centre)))
         self.root.after(int((lead + settle + collect) * 1000), self._step_done)
 
     def _set_target(self, t) -> None:
         if not self.done:
+            self.group += 1
             self.target = t
+
+    def _glide(self, n: int) -> None:
+        """Moves the red dot one tick along its path. Samples are labelled with where the dot was
+        LAG ago, as the eyes trail it; each second of the path is its own group, so held-out
+        checks can't test on frames right next to ones they learned from."""
+        # ponytail: time counted in ticks (testable on a fake clock); a busy main loop slows the dot a
+        # little, LAG then is a little off. Use the real clock if that shows in the error.
+        if self.done:
+            return
+        t, r = n * TICK, self.screens[self.b]
+        if t > GLIDE_S:
+            self.gliding = False
+            self._step_done()
+            return
+        if n:
+            (x, y), (ox, oy) = glide(r, t), glide(r, t - TICK)
+            self.canvases[self.b].move("dot", x - ox, y - oy)
+        if t >= CATCH_UP:
+            if int(t) != int(t - TICK):
+                self.group += 1
+            self.target = (glide(r, t - LAG), GLIDE, r.mid)
+        self.root.after(int(TICK * 1000), lambda: self._glide(n + 1))
 
     def _step_done(self) -> None:
         self.target = None

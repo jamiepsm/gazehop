@@ -40,6 +40,20 @@ class Sample:
     key: str | None = None      # learned samples: which situation this belongs to
     rx: float | None = None     # ...and how far off the calibrated model was for it
     ry: float | None = None
+    g: int | None = None        # calibration step (a dot, a second of a gliding dot), for held-out checks
+
+
+def step_of(s: Sample):
+    """Which group a sample is held out with: its calibration step, or (saved before steps were
+    numbered) its dot."""
+    return s.g if s.g is not None else (int(s.x), int(s.y))
+
+
+def numbered(keys) -> np.ndarray:
+    """Group keys -> 0, 1, 2... in order of first appearance; groups with a number divisible by 4
+    are held out."""
+    ids: dict = {}
+    return np.array([ids.setdefault(k, len(ids)) for k in keys], int)
 
 
 def head_features(r) -> list:
@@ -94,13 +108,12 @@ class Regressor:
         return Regressor(mean.tolist(), std.tolist(), W[:, 0].tolist(), W[:, 1].tolist(), lam)
 
     @staticmethod
-    def best_fit(xs, targets, weights, lam: float | None) -> "Regressor | None":
-        """Picks the regularisation by holding out every 4th calibration dot (all of its frames,
-        so neighbouring frames can't leak), then refits on everything with the winner."""
+    def best_fit(xs, targets, weights, lam: float | None, groups=None) -> "Regressor | None":
+        """Picks the regularisation by holding out every 4th group (by default: target point) with
+        all of its frames, so neighbouring frames can't leak, then refits on everything with the winner."""
         if lam is not None:
             return Regressor.fit(xs, targets, weights, lam)
-        dots: dict = {}
-        group = [dots.setdefault((int(t[0]), int(t[1])), len(dots)) for t in targets]
+        group = numbered(groups if groups is not None else [(int(t[0]), int(t[1])) for t in targets])
         test = [i for i, g in enumerate(group) if g % 4 == 0]
         train = [i for i, g in enumerate(group) if g % 4 != 0]
         if len(test) < 5 or len(train) < 20:
@@ -156,11 +169,10 @@ class Kernel:
 
 def choose_kernel(calib, lam: float):
     """(lambda for the linear model under the kernel, held-out error in px), or (None, error of
-    the linear model alone) if no kernel helps. Every 4th calibration dot is held out; on them a
-    linear model plus kernel learned on the other dots must beat the linear model alone. The
+    the linear model alone) if no kernel helps. Every 4th calibration step is held out; on them a
+    linear model plus kernel learned on the other steps must beat the linear model alone. The
     linear model may be smoother under a kernel (it learns the curves), so 10 x lambda is tried too."""
-    dots: dict = {}
-    group = np.array([dots.setdefault((int(s.x), int(s.y)), len(dots)) for s in calib])
+    group = numbered(step_of(s) for s in calib)
     test, train = group % 4 == 0, group % 4 != 0
     if test.sum() < 5 or train.sum() < 20:
         return None, None
@@ -210,7 +222,7 @@ class GazeModel:
     median_width: float | None = None
     pose_std: list | None = None
     kernel: Kernel | None = None        # the non-linear correction, if it helps this person
-    error: float | None = None          # held-out median error in px (every 4th dot), measured when fitted
+    error: float | None = None          # held-out median error in px (every 4th calibration step), measured when fitted
 
     def __post_init__(self):
         if self.kernel is not None:
@@ -307,7 +319,8 @@ class GazeModel:
                                   [(s.hx, s.hy if s.hy is not None else s.y) for s, _ in h],
                                   [w for _, w in h], lambdas[0] if lambdas else lam)
         full = Regressor.best_fit([full_features(s.f) for s, _ in rows], [(s.x, s.y) for s, _ in rows],
-                                  [w for _, w in rows], lambdas[1] if lambdas else lam)
+                                  [w for _, w in rows], lambdas[1] if lambdas else lam,
+                                  groups=[step_of(s) for s, _ in rows])
         if head is None or full is None:
             return None
         if reuse is not None:

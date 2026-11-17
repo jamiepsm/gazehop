@@ -79,7 +79,7 @@ def face(gaze, head, rng):
 
 
 def calibrate(root, screens, keep=True, **kw):
-    from gazehop.calibration import EYES, NOSE, Calibration
+    from gazehop.calibration import EYES, GLIDE, NOSE, Calibration
     rng, result = random.Random(3), []
     cal = Calibration(root, screens, result.append, **kw)
     cal.start()
@@ -99,7 +99,7 @@ def calibrate(root, screens, keep=True, **kw):
             cal.wins[0].bindings["<space>"]()
         elif cal.target:
             p, kind, centre = cal.target
-            head = centre if kind == EYES else p if kind == NOSE else (p[0] + rng.uniform(-300, 300), p[1] + rng.uniform(-200, 200))
+            head = centre if kind in (EYES, GLIDE) else p if kind == NOSE else (p[0] + rng.uniform(-300, 300), p[1] + rng.uniform(-200, 200))
             cal.add(face(p, head, rng))
         elif cal.collecting_keyboard:
             cal.add(face((800, 1500), (800, 1500), rng))
@@ -109,7 +109,7 @@ def calibrate(root, screens, keep=True, **kw):
 
 def test_calibration_flow(faketk):
     model, took = calibrate(FakeTk(), [SCREEN])
-    assert model is not None and 40 < took < 90      # "about 45 seconds" plus prompts
+    assert model is not None and 40 < took < 100     # "about a minute" plus prompts
     assert model.keyboard_line is not None and model.keyboard_line > SCREEN.bottom
     rng, errs = random.Random(9), []
     for _ in range(200):

@@ -106,7 +106,7 @@ Set `screen_from_gaze` to true if you would rather not turn your head — it is 
 
 ## Calibration
 
-Takes about 45 seconds per screen: follow the red dot with your eyes only, point your nose at the
+Takes about a minute per screen: follow the gliding red dot with your eyes only, point your nose at the
 blue dot, keep looking at the green dot while moving your head, then look at your keyboard once.
 Space (or a click) starts each part; Esc or the **Cancel** button in the top-right corner of any
 screen stops it. Your camera picture shows at the top of your laptop's own screen (or your main

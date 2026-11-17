@@ -333,7 +333,7 @@ class App:
         if self.calibration:
             return "Calibrating…", "Follow the instructions on the dimmed screen."
         if self.model is None:
-            return "Not calibrated", "Press Calibrate to start (about 45 seconds per screen)."
+            return "Not calibrated", "Press Calibrate to start (about a minute per screen)."
         if self.paused:
             return "Paused", "Focus stays where it is until you resume."
         if self._fresh() is None:
