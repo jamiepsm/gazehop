@@ -5,12 +5,14 @@ are made. Opened from the app window or the tray menu.
 """
 from __future__ import annotations
 
+import sys
 import threading
 import tkinter as tk
 
 from . import config
 from .ui import ACCENT, APP_NAME, BG, CARD, FG, LINE, MUTED, OFF, WARN, button, disc, font, toplevel
 
+SHARE = sys.platform.startswith("linux")     # sharing the camera needs v4l2loopback
 RESTART = f"Takes effect the next time {APP_NAME} starts."
 # tab -> rows of (key, label, explanation, control). A control is "switch", "camera", "hotkey",
 # "colour", a list of (value, label) choices, or (lowest, highest, step, unit) for a slider.
@@ -39,8 +41,9 @@ PAGES = [
         ("camera", "Camera", RESTART, "camera"),
         ("camera_mode", "Camera and calls",
          "Keep: no other app can use the camera (Pause frees it). Give to calls: while an app uses the "
-         f"microphone, {APP_NAME} frees the camera and keeps focus where it is.",
-         [("keep", "Keep"), ("calls", "Give to calls")]),
+         f"microphone, {APP_NAME} frees the camera and keeps focus where it is."
+         + (" Share: call apps pick \u201cGazeHop Camera\u201d (set up once, see README)." if SHARE else ""),
+         [("keep", "Keep"), ("calls", "Give to calls")] + ([("share", "Share")] if SHARE else [])),
         ("smoothing", "Smoothing", "How many recent estimates are averaged. Lower is faster but jumpier.",
          (1, 20, 1, "")),
         ("learn", "Learn from clicks", f"Every click teaches {APP_NAME} where you were looking.", "switch"),

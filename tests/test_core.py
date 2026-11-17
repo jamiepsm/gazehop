@@ -452,3 +452,24 @@ def test_start_at_login(tmp_path, monkeypatch):
     config.set_start_at_login(False)
     config.set_start_at_login(False)        # already off: fine
     assert not (tmp_path / "autostart" / "gazehop.desktop").exists()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="v4l2loopback is Linux")
+def test_virtual_camera_writes_i420(tmp_path, monkeypatch):
+    """Sharing the camera: the device gets its picture format once, then each frame as I420."""
+    import fcntl
+    import struct
+    from gazehop import meetings
+    calls = []
+    monkeypatch.setattr(fcntl, "ioctl", lambda fd, req, arg: calls.append((req, arg)))
+    dev = tmp_path / "video42"
+    dev.write_bytes(b"")
+    cam = meetings.VirtualCamera(str(dev))
+    frame = np.zeros((48, 64, 3), np.uint8)
+    cam.write(frame)
+    cam.write(frame)
+    assert len(calls) == 1 and calls[0][0] == meetings.VIDIOC_S_FMT and len(calls[0][1]) == 208
+    assert struct.unpack_from("I4x7I", calls[0][1]) == (2, 64, 48, meetings.YU12, 1, 64, 64 * 48 * 3 // 2, 8)
+    assert dev.stat().st_size == 2 * 64 * 48 * 3 // 2
+    cam.close()
+    cam.write(frame)                    # closed (or failed): writing does nothing, never raises

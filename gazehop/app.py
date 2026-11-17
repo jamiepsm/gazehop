@@ -33,6 +33,7 @@ class App:
                   "differently, or the screens changed): please calibrate again.")
         self.add_round = add_round and saved is not None
         self.in_call = False            # camera_mode "calls": the camera is freed for a call
+        self._share_tried = False       # camera_mode "share": looked for the virtual camera already
         self._camera_checked = -1e9
         if add_round and saved is None:
             print("gazehop: nothing to add to (no calibration for this screen layout) — starting a fresh one.")
@@ -282,7 +283,27 @@ class App:
                 self._reset_filters()
                 print("gazehop: a call started: the camera is free for it" if in_call else
                       "gazehop: the call ended: using the camera again")
+            self._share(self.cfg["camera_mode"] == "share")
         self.tracker.active = bool(self.calibration) or not (self.paused or self.in_call)
+
+    def _share(self, on: bool) -> None:
+        """camera_mode "share": every camera frame also goes to the "GazeHop Camera" device."""
+        if on and self.tracker.sink is None and not self._share_tried:
+            self._share_tried = True
+            from .meetings import LABEL, VirtualCamera, virtual_camera_path
+            path = virtual_camera_path()
+            try:
+                self.tracker.sink = VirtualCamera(path) if path else None
+            except OSError as e:
+                print(f"gazehop: cannot share the camera through {path}: {e}")
+                return
+            print(f"gazehop: sharing the camera as \"{LABEL}\" ({path})" if path else
+                  f"gazehop: no \"{LABEL}\" device to share the camera through; set it up once as the "
+                  "README says (Sharing the camera with calls), then pick Share again.")
+        elif not on and (self.tracker.sink or self._share_tried):
+            sink, self.tracker.sink, self._share_tried = self.tracker.sink, None, False
+            if sink:
+                sink.close()
 
     def _speed_report(self, now: float) -> None:
         if not self.tracker.active:     # camera freed (paused, a call): measure once it is back

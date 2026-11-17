@@ -136,6 +136,27 @@ around, then press Space to keep the new calibration or Esc to discard it.
 - During the red dots keep your head still; during the green dots move it more than feels natural.
 - Everyday clicks keep refining the calibration on top of whatever you calibrated.
 
+## Sharing the camera with calls
+
+Most webcams work for one app at a time. Choose in Settings → Tracking → *Camera and calls*:
+
+- **Keep** (default): GazeHop keeps the camera. Pause frees it for other apps.
+- **Give to calls**: while any app uses your microphone (a call), GazeHop frees the camera and
+  keeps focus where it is. When the call ends it takes the camera back by itself.
+- **Share** (Linux): both work at once. GazeHop passes its camera picture on to a virtual camera
+  called *GazeHop Camera*; pick that one in Meet, Teams or Zoom. Set it up once:
+
+  ```sh
+  sudo apt install v4l2loopback-dkms
+  echo 'options v4l2loopback video_nr=42 card_label="GazeHop Camera" exclusive_caps=1' | sudo tee /etc/modprobe.d/gazehop-camera.conf
+  echo v4l2loopback | sudo tee /etc/modules-load.d/gazehop-camera.conf
+  sudo modprobe -r v4l2loopback; sudo modprobe v4l2loopback
+  ```
+
+  With Secure Boot on, Ubuntu asks you to enrol a key for the module at the next restart. If you
+  already use v4l2loopback (for OBS, say), give it two devices instead:
+  `options v4l2loopback devices=2 video_nr=42,43 card_label="GazeHop Camera","OBS Virtual Camera" exclusive_caps=1,1`.
+
 ## Settings
 
 Press **Settings** in the app window, or choose **Settings…** in the tray menu. Changes apply right
@@ -163,7 +184,7 @@ Linux) if you prefer to edit them by hand; restart afterwards.
 | `hotkey` | `<ctrl>+<alt>+g` | Pause/resume |
 | `check_updates` | true | Check once per start whether a newer version is out |
 | `start_at_login` | false | Open GazeHop when you log in |
-| `camera_mode` | keep | `keep`: no other app can use the camera (Pause frees it); `calls`: while an app uses the microphone, GazeHop frees the camera and keeps focus where it is |
+| `camera_mode` | keep | `keep`, `calls` or `share` (Linux): see [Sharing the camera with calls](#sharing-the-camera-with-calls) |
 
 ## Updating
 

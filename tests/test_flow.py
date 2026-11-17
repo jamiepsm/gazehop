@@ -146,7 +146,7 @@ def test_app_focus_follows_gaze(faketk, monkeypatch, tmp_path):
         def __init__(self, *a): self.seq, self.f = 0, None
         def start(self): pass
         def stop(self): pass
-        preview, picture = False, None
+        preview, picture, active, sink = False, None, True, None
         def latest_preview(self): return self.picture
         def latest(self):
             self.seq += 1
@@ -237,6 +237,14 @@ def test_app_focus_follows_gaze(faketk, monkeypatch, tmp_path):
     assert not app.tracker.active                         # paused: the camera is free too
     app.events.put(("pause",))
     look((300, 450), (500, 450), 0.1)
+    (tmp_path / "video42").write_bytes(b"")                 # "share": frames also go to the virtual camera
+    monkeypatch.setattr(gazehop.meetings, "virtual_camera_path", lambda: str(tmp_path / "video42"))
+    cfg["camera_mode"], app._camera_checked = "share", -1e9
+    look((300, 450), (500, 450), 0.1)
+    assert app.tracker.sink is not None and app.tracker.sink.path.endswith("video42")
+    cfg["camera_mode"], app._camera_checked = "keep", -1e9
+    look((300, 450), (500, 450), 0.1)
+    assert app.tracker.sink is None
 
     # docked at another desk: that layout has no calibration yet; back home, the first one returns
     home, work = app.model, [Rect(0, 0, 1600, 900), Rect(1600, 0, 1600, 900)]
