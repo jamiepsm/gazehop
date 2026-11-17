@@ -33,13 +33,6 @@ class App:
         if saved is None and os.path.exists(self.model_file):
             print("gazehop: your saved calibration does not fit (a new gazehop version reads the eyes "
                   "differently, or the screens changed): please calibrate again.")
-        if saved is not None and saved.error is None and saved.calib:
-            # saved before the non-linear correction existed: learn it once now from the same samples
-            print("gazehop: improving your saved calibration (once, a few seconds)...")
-            better = GazeModel.fit(saved.calib, saved.screens, saved.learned, saved.keyboard)
-            if better is not None:
-                saved = better
-                better.save(self.model_file)
         self.add_round = add_round and saved is not None
         if add_round and saved is None:
             print("gazehop: nothing to add to (no calibration for this screen layout) — starting a fresh one.")

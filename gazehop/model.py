@@ -38,7 +38,7 @@ class Sample:
     hy: float | None = None
     w: float = 1.0              # corrections 3, clicks 1, confirmations 0.5
     key: str | None = None      # learned samples: which situation this belongs to
-    rx: float | None = None     # ...and how far off the linear model was for it
+    rx: float | None = None     # ...and how far off the calibrated model was for it
     ry: float | None = None
 
 
@@ -222,7 +222,7 @@ class GazeModel:
         l = [s for s in self.learned if s.rx is not None]
         if l and self.pose_std:
             self._lf = np.array([s.f[:N_POSE] for s in l], float) / np.asarray(self.pose_std, float)
-            self._lp = np.array([[s.x - s.rx, s.y - s.ry] for s in l], float)   # where the linear model put it
+            self._lp = np.array([[s.x - s.rx, s.y - s.ry] for s in l], float)   # where the calibrated model put it
             self._lr = np.array([[s.rx, s.ry] for s in l], float)
             self._lw = np.array([s.w for s in l], float)
         else:
@@ -250,7 +250,7 @@ class GazeModel:
 
     def correction(self, f, p) -> tuple[float, float]:
         """Nearby remembered situations (similar pose and predicted spot) vote with how far off the
-        linear model was for them. Few or distant neighbours -> little correction."""
+        calibrated model was for them. Few or distant neighbours -> little correction."""
         if self._lf is None:
             return 0.0, 0.0
         d2 = ((np.asarray(f[:N_POSE], float) / np.asarray(self.pose_std, float) - self._lf) ** 2).sum(axis=1)
