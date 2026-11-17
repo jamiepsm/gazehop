@@ -171,8 +171,7 @@ class Calibration:
         c.delete("all")
         size = max(14, int(r.h / 45))
         if message:
-            c.create_text(r.w / 2, r.h / 2, text=message, fill="white", font=("Helvetica", size),
-                          justify="center", width=r.w - 80)
+            self._text(c, r, message, size)
         if hint:
             c.create_text(r.w / 2, 50, text=hint, fill="#bbbbbb", font=("Helvetica", size))
         if dot:
@@ -185,17 +184,33 @@ class Calibration:
                       tags=("cancel", "cancel-text"))
         self._draw_preview(k)
 
+    @staticmethod
+    def _text(c, r, lines, size) -> None:
+        """Lines centred on the screen, one canvas item each, so a `(colour, text)` line can get a
+        dot in that colour in front of it. Long lines wrap; each line is stacked under the last."""
+        y, font = 0, ("Helvetica", size)
+        for line in lines.split("\n") if isinstance(lines, str) else lines:
+            colour, line = line if isinstance(line, tuple) else (None, line)
+            item = c.create_text(r.w / 2, y, text=line or " ", anchor="n", fill="white", font=font,
+                                 justify="center", width=r.w - 80 - 2 * size, tags="message")
+            box = c.bbox(item)
+            if colour:
+                c.create_text(box[0] - size / 2, box[1], text="●", anchor="ne", fill=colour, font=font, tags="message")
+            y = box[3]
+        c.move("message", 0, (r.h - y) / 2)
+
     def _prompt(self, done_name) -> None:
         for k in range(len(self.screens)):
             if k == self.b:
-                done = f"✓ Screen {done_name} calibrated.\n\n" if done_name else ""
-                self._draw(k, done + f"Press Space (or click) to calibrate screen {k + 1} — about 45 seconds.\n\n"
-                           "● Red dot: face the middle of the screen, follow it with your eyes only.\n"
-                           "● Blue dot: point your nose at it.\n"
-                           "● Green dot: keep your eyes on it and slowly move your head around —\n"
-                           "left, right, up, down, closer and farther.\n\n"
-                           + ("The grey ring shows where your previous calibration thinks you are looking.\n\n"
-                              if self.previous else "") + "Esc cancels.")
+                done = [f"✓ Screen {done_name} calibrated.", ""] if done_name else []
+                self._draw(k, done + [
+                    f"Press Space (or click) to calibrate screen {k + 1} — about 45 seconds.", "",
+                    (PHASE[EYES][2], "Red dot: face the middle of the screen, follow it with your eyes only."),
+                    (PHASE[NOSE][2], "Blue dot: point your nose at it."),
+                    (PHASE[MOVE][2], "Green dot: keep your eyes on it and slowly move your head around —"),
+                    "left, right, up, down, closer and farther.", ""]
+                    + (["The grey ring shows where your previous calibration thinks you are looking.", ""]
+                       if self.previous else []) + ["Esc cancels."])
             else:
                 self._draw(k, "Look at the other screen.")
         self.wins[self.b].focus_force()

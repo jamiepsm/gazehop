@@ -36,6 +36,9 @@ class FakeTk:
     def subsample(self, *a):
         return self
 
+    def bbox(self, *a):
+        return (0, 0, 0, 0)
+
     def __getattr__(self, name):
         if name.startswith("__"):
             raise AttributeError(name)
@@ -122,6 +125,8 @@ def test_calibration_cancel(faketk):
     result = []
     cal = Calibration(FakeTk(), [SCREEN], result.append)
     cal.start()
+    bullets = [c[2]["fill"] for c in cal.canvases[0].calls if c[0] == "create_text" and c[2].get("text") == "●"]
+    assert bullets == ["#ff453a", "#0a84ff", "#30d158"]      # the intro's dots in the colours of the phases
     cal.wins[0].bindings["<space>"]()
     FakeTk.advance(3)
     cal.wins[0].bindings["<Escape>"]()
