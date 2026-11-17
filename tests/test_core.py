@@ -401,10 +401,11 @@ def test_record_and_measure(tmp_path, capsys):
         for cx in (275, 365):
             cv2.ellipse(gray, (cx, 220), (26, 11), 0, 0, 360, 230, -1)
             cv2.circle(gray, (int(cx + 8 * u), int(220 + 4 * v)), 8, 30, -1)
-        lm = _face(8 * u)
-        f = features(lm, np.eye(4), gray)
+        lm, pose = _face(8 * u), np.eye(4)
+        pose[2, 3] = -50                        # 50 cm in front of the camera
+        f = features(lm, pose, gray)
         x, y = 1000 + 600 * u, 500 + 300 * v
-        rec.add(Sample(f, x, y, 1000, 500, g=i // 8), (*face_crop(gray, lm), lm, np.eye(4), (640, 480)),
+        rec.add(Sample(f, x, y, 1000, 500, g=i // 8), (*face_crop(gray, lm), lm, pose, (640, 480)),
                 (0, i / 8) if i < 80 else None)
     rec.save([Rect(0, 0, 2000, 1000)])
     spec = importlib.util.spec_from_file_location("measure", os.path.join(os.path.dirname(__file__), "..", "tools", "measure.py"))
@@ -412,4 +413,8 @@ def test_record_and_measure(tmp_path, capsys):
     spec.loader.exec_module(measure)
     measure.main(str(tmp_path))
     out = capsys.readouterr().out
-    assert "straight" in out and "level" in out and "lag 0.15" in out and out.count(" px ") == 8, out
+    assert "straight" in out and "3D" in out and "lag 0.15" in out and out.count(" px ") == 9, out
+    # a face straight in front of the camera: the 3D eye pictures look like the level ones
+    _, rows = measure.load(str(tmp_path))
+    assert np.corrcoef(measure.level(rows[0]), measure.normalised(rows[0]))[0, 1] > 0.9
+    assert measure.axes_check(rows) < 1
